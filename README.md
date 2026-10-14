@@ -98,7 +98,7 @@ After the installation finishes log out and back in.
 
 Right-click the clock to open Bar Settings. 
 
-It will show an empty desktop, dowload and move wallpapers to Pictures/Wallpapers, then you can use the wallpaper picker with: Super + W.
+Dowload and move wallpapers to Pictures/Wallpapers. Wallpaper picker: Super + W.
 
 > [!important]
 > **Do not move or delete the dotfiles repository after installation.**

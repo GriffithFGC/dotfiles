@@ -6,20 +6,28 @@ import QtQuick
 import QtQuick.Effects
 
 Scope {
-
-PanelWindow {
     id: root
 
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    exclusionMode: ExclusionMode.Ignore
+    // ---- window lifecycle ------------------------------------------------
+    property bool mounted: false      // OSD window exists
+    property real winW: 0             // reported by the OSD window while mounted
+    property real winH: 0
+    property real hitW: 0
 
-    WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "mediaosd"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    // Must be longer than the fade-out (OsdCard opacity/scale = 150ms).
+    Timer {
+        id: unmountTimer
+        interval: 250
+        onTriggered: {
+            root.mounted = false
+            root.winW = 0
+            root.winH = 0
+            root.hitW = 0
+            root.hovered = false
+        }
+    }
 
-    mask: Region { item: root.showing ? hitbox : null }
-
+    // ---- constants / specs -----------------------------------------------
     readonly property int topGap: 30
     readonly property int keepVisible: 40
     readonly property int toolsHeight: 22
@@ -76,24 +84,14 @@ PanelWindow {
     readonly property bool mediaMoved: offsetX !== 0 || offsetY !== 0
     readonly property bool volumeMoved: volOffsetX !== 0 || volOffsetY !== 0
 
-    readonly property bool movedFromDefault: mediaMoved || volumeMoved
-        || osdScale !== numSpec.osdScale.def
-        || mediaWidth !== numSpec.mediaWidth.def
-        || portraitWidth !== numSpec.portraitWidth.def
-        || flyoutWidth !== numSpec.flyoutWidth.def
-        || barCount !== numSpec.barCount.def
-        || barRadius !== numSpec.barRadius.def
-        || mediaTimeout !== numSpec.mediaTimeout.def
-        || volTimeout !== numSpec.volTimeout.def
-        || showVisualizer !== boolDefaults.showVisualizer
-        || trackChangeOsd !== boolDefaults.trackChangeOsd
-        || showArt !== boolDefaults.showArt
-        || musicOnly !== boolDefaults.musicOnly
-        || artistBelow !== boolDefaults.artistBelow
-        || portrait !== boolDefaults.portrait
+    readonly property bool modified:
+        posKeys.some(k => root[k] !== 0)
+        || numKeys.some(k => root[k] !== numSpec[k].def)
+        || boolKeys.some(k => root[k] !== boolDefaults[k])
 
     readonly property string statePath: Quickshell.env("HOME") + "/.config/quickshell/state/mediaosd-state.json"
 
+    // ---- player detection --------------------------------------------------
     readonly property var musicPlayers: [
         "spotify", "spotifyd", "spotify_player", "spotify-launcher", "mpd", "mopidy", "cmus",
         "rhythmbox", "strawberry", "amberol", "lollypop", "deadbeef", "audacious",
@@ -212,6 +210,7 @@ PanelWindow {
             mediaProcess.running = true
     }
 
+    // ---- volume watching (always on, cheap) -------------------------------
     PwObjectTracker { objects: [Pipewire.defaultAudioSink] }
 
     readonly property var sink: Pipewire.defaultAudioSink
@@ -224,6 +223,7 @@ PanelWindow {
         function onMutedChanged() { root.triggerOsd() }
     }
 
+    // ---- OSD state ---------------------------------------------------------
     property bool ready: false
     property bool showing: false
     property bool showMedia: false
@@ -232,9 +232,7 @@ PanelWindow {
     property string settingsTab: "media"
     property bool dragging: false
     property bool pinned: false
-    readonly property bool hovered: flyoutHover.hovered || mediaHover.hovered || toolsHover.hovered
-
-    readonly property Item activeCard: showMedia ? mediaPanel : flyout
+    property bool hovered: false     // driven by a Binding inside the OSD window
 
     Timer {
         interval: 2000
@@ -285,7 +283,6 @@ PanelWindow {
         showMedia = !volumeTab
         showing = true
         hideTimer.restart()
-        Qt.callLater(reposition)
     }
 
     function closeSettings() {
@@ -303,12 +300,8 @@ PanelWindow {
 
     function setSettingsTab(tab) {
         settingsTab = tab
-        if (tab === "media")
-            showMedia = true
-        else if (tab === "volume")
-            showMedia = false
+        showMedia = tab === "media"
         hideTimer.restart()
-        Qt.callLater(reposition)
     }
 
     function togglePinned() {
@@ -332,11 +325,15 @@ PanelWindow {
     }
 
     onShowingChanged: {
-        if (!showing) {
+        if (showing) {
+            unmountTimer.stop()
+            mounted = true
+        } else {
             showMedia = false
             settingsOpen = false
             dragging = false
             pinned = false
+            unmountTimer.restart()
         }
     }
 
@@ -354,6 +351,7 @@ PanelWindow {
         function hide(): void { root.closeAll() }
     }
 
+    // ---- settings helpers --------------------------------------------------
     function clamp(v, lo, hi) {
         return Math.max(lo, Math.min(hi, Math.round(v)))
     }
@@ -367,15 +365,17 @@ PanelWindow {
         return v + s.unit
     }
 
+    // Only called while the user drags the handle. Saved offsets are never
+    // rewritten by window resizes, so a transient window/card size during
+    // mount can no longer squeeze the position you left it at.
     function setPosition(x, y) {
         var nx = x
         var ny = y
-        if (width > 0 && height > 0) {
-            var w = hitbox.width
-            var minX = keepVisible - width / 2 - w / 2
-            var maxX = width / 2 - keepVisible + w / 2
+        if (winW > 0 && winH > 0 && hitW > 0) {
+            var minX = keepVisible - winW / 2 - hitW / 2
+            var maxX = winW / 2 - keepVisible + hitW / 2
             var minY = -topGap
-            var maxY = Math.max(minY, height - keepVisible - topGap)
+            var maxY = Math.max(minY, winH - keepVisible - topGap)
             nx = Math.max(minX, Math.min(maxX, x))
             ny = Math.max(minY, Math.min(maxY, y))
         }
@@ -399,21 +399,6 @@ PanelWindow {
         saveState()
     }
 
-    function resetPosition() {
-        resetPos(showMedia)
-    }
-
-    function reposition() {
-        if (showing)
-            setPosition(curX, curY)
-    }
-
-    onOsdScaleChanged: reposition()
-    onMediaWidthChanged: reposition()
-    onFlyoutWidthChanged: reposition()
-    onPortraitChanged: reposition()
-    onPortraitWidthChanged: reposition()
-
     function setNumber(key, v) {
         var s = numSpec[key]
         root[key] = clamp(v, s.min, s.max)
@@ -421,11 +406,6 @@ PanelWindow {
 
     function toggleSetting(key) {
         root[key] = !root[key]
-        saveState()
-    }
-
-    function resetKey(key) {
-        root[key] = numSpec[key].def
         saveState()
     }
 
@@ -473,6 +453,7 @@ PanelWindow {
         }
     }
 
+    // ---- background processes (not part of the window) --------------------
     Process {
         id: mediaProcess
 
@@ -515,8 +496,11 @@ PanelWindow {
         }
     }
 
+    // Resync the playback position. Metadata changes already arrive through the
+    // --follow process above and the position is interpolated locally by the
+    // timer below, so this only needs to correct drift (was every 500ms).
     Timer {
-        interval: 500
+        interval: 1000
         repeat: true
         running: root.showing && root.showMedia
         onTriggered: root.updateMedia()
@@ -576,434 +560,480 @@ PanelWindow {
         }
     }
 
-    Item {
-        id: scene
-        anchors.fill: parent
+    // ---- OSD window: only exists while mounted ----------------------------
+    LazyLoader {
+        active: root.mounted
 
-        Item {
-            id: hitbox
-            width: root.activeCard.width * root.scaleFactor
-            height: (root.activeCard.height + root.toolsHeight) * root.scaleFactor
-            x: (scene.width - width) / 2 + root.curX
-            y: root.topGap + root.curY
-        }
+        PanelWindow {
+            id: win
 
-        OsdCard {
-            id: flyout
-            host: root
-            xOffset: root.volOffsetX
-            yOffset: root.volOffsetY
-            open: root.showing && !root.showMedia
-            width: root.flyoutWidth
-            height: 28
-            radius: 36
+            // The window is created with `showing` already true, so cards
+            // bound straight to it would pop in with no animation. `reveal`
+            // stays false until one tick after creation, then follows `showing`.
+            property bool reveal: false
 
-            HoverHandler {
-                id: flyoutHover
-                enabled: flyout.open
+            readonly property Item activeCard: root.showMedia ? mediaPanel : flyout
+
+            anchors { top: true; bottom: true; left: true; right: true }
+            color: "transparent"
+            exclusionMode: ExclusionMode.Ignore
+
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.namespace: "mediaosd"
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            mask: Region { item: root.showing ? hitbox : null }
+
+            onWidthChanged: root.winW = width
+            onHeightChanged: root.winH = height
+
+            Component.onCompleted: {
+                root.winW = width
+                root.winH = height
+                Qt.callLater(function () {
+                    win.reveal = Qt.binding(function () { return root.showing })
+                })
             }
 
-            Text {
-                id: icon
-                anchors.left: parent.left
-                anchors.leftMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-
-                text: {
-                    if (root.muted)
-                        return "󰖁"
-                    if (root.volume <= 0)
-                        return "󰕿"
-                    if (root.volume < 0.5)
-                        return "󰖀"
-                    return "󰕾"
-                }
-
-                font.family: "Symbols Nerd Font"
-                font.pixelSize: 20
-                color: Theme.text
+            // hover state lives in this window, but the Scope's hide timer needs it
+            Binding {
+                target: root
+                property: "hovered"
+                value: flyoutHover.hovered || mediaHover.hovered || toolsHover.hovered
             }
 
-            Text {
-                anchors.right: parent.right
-                anchors.rightMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.muted ? "Muted" : Math.round(root.volume * 100) + "%"
-                font.pixelSize: 12
-                font.bold: true
-                color: Theme.text
-            }
-
-            Rectangle {
-                anchors.left: icon.right
-                anchors.leftMargin: 15
-                anchors.right: parent.right
-                anchors.rightMargin: 68
-                anchors.verticalCenter: parent.verticalCenter
-                height: 5
-                radius: 4
-                color: "#555555"
-
-                Rectangle {
-                    width: root.muted ? 0 : parent.width * Math.min(root.volume, 1)
-                    height: parent.height
-                    radius: 4
-                    color: Theme.text
-                    Behavior on width { NumberAnimation { duration: 100 } }
-                }
-            }
-        }
-
-        OsdCard {
-            id: mediaPanel
-            host: root
-            xOffset: root.offsetX
-            yOffset: root.offsetY
-            open: root.showing && root.showMedia
-            width: root.portrait ? root.portraitWidth : root.mediaWidth
-            height: mediaCol.height + 28
-            radius: 24
-
-            readonly property bool artShown: root.showArt
-                && root.artUrl !== "" && artImg.status !== Image.Error
-
-            onHeightChanged: root.reposition()
-
-            HoverHandler {
-                id: mediaHover
-                enabled: mediaPanel.open
-            }
-
-            MouseArea {
+            Item {
+                id: scene
                 anchors.fill: parent
-                enabled: mediaPanel.open
-            }
-
-            Column {
-                id: mediaCol
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.topMargin: 14
-                anchors.leftMargin: root.portrait ? 20 : 25
-                anchors.rightMargin: root.portrait ? 20 : 25
-                spacing: 6
 
                 Item {
-                    id: topBlock
-                    width: parent.width
-                    readonly property real artSize: mediaPanel.artShown ? (root.portrait ? width : 52) : 0
-                    height: root.portrait
-                        ? artSize + (artSize > 0 ? 8 : 0) + textCol.height
-                        : Math.max(artSize, textCol.height)
+                    id: hitbox
+                    width: win.activeCard.width * root.scaleFactor
+                    height: (win.activeCard.height + root.toolsHeight) * root.scaleFactor
+                    x: (scene.width - width) / 2 + root.curX
+                    y: root.topGap + root.curY
 
-                    Item {
-                        visible: mediaPanel.artShown
-                        width: topBlock.artSize
-                        height: topBlock.artSize
+                    onWidthChanged: root.hitW = width
+                    Component.onCompleted: root.hitW = width
+                }
 
-                        Image {
-                            id: artImg
-                            anchors.fill: parent
-                            source: root.showArt ? root.artUrl : ""
-                            sourceSize: Qt.size(400, 400)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            smooth: true
-                            visible: false
+                OsdCard {
+                    id: flyout
+                    host: root
+                    xOffset: root.volOffsetX
+                    yOffset: root.volOffsetY
+                    open: win.reveal && root.showing && !root.showMedia
+                    width: root.flyoutWidth
+                    height: 28
+                    radius: 36
+
+                    HoverHandler {
+                        id: flyoutHover
+                        enabled: flyout.open
+                    }
+
+                    Text {
+                        id: icon
+                        anchors.left: parent.left
+                        anchors.leftMargin: 20
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        text: {
+                            if (root.muted)
+                                return "󰖁"
+                            if (root.volume <= 0)
+                                return "󰕿"
+                            if (root.volume < 0.5)
+                                return "󰖀"
+                            return "󰕾"
                         }
+
+                        font.family: "Symbols Nerd Font"
+                        font.pixelSize: 20
+                        color: Theme.text
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.muted ? "Muted" : Math.round(root.volume * 100) + "%"
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: Theme.text
+                    }
+
+                    Rectangle {
+                        anchors.left: icon.right
+                        anchors.leftMargin: 15
+                        anchors.right: parent.right
+                        anchors.rightMargin: 68
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 5
+                        radius: 4
+                        color: "#555555"
 
                         Rectangle {
-                            id: artMask
-                            anchors.fill: parent
-                            radius: root.portrait ? 16 : 10
-                            visible: false
-                            layer.enabled: true
+                            width: root.muted ? 0 : parent.width * Math.min(root.volume, 1)
+                            height: parent.height
+                            radius: 4
+                            color: Theme.text
+                            Behavior on width { NumberAnimation { duration: 100 } }
                         }
+                    }
+                }
 
-                        MultiEffect {
-                            anchors.fill: parent
-                            source: artImg
-                            maskEnabled: true
-                            maskSource: artMask
-                        }
+                OsdCard {
+                    id: mediaPanel
+                    host: root
+                    xOffset: root.offsetX
+                    yOffset: root.offsetY
+                    open: win.reveal && root.showing && root.showMedia
+                    width: root.portrait ? root.portraitWidth : root.mediaWidth
+                    height: mediaCol.height + 28
+                    radius: 24
+
+                    readonly property bool artShown: root.showArt
+                        && root.artUrl !== "" && artImg.status !== Image.Error
+
+                    HoverHandler {
+                        id: mediaHover
+                        enabled: mediaPanel.open
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: mediaPanel.open
                     }
 
                     Column {
-                        id: textCol
-                        readonly property bool sameLine: !root.portrait && !root.artistBelow
-                        x: root.portrait ? 0 : (topBlock.artSize > 0 ? topBlock.artSize + 12 : 0)
-                        y: root.portrait
-                            ? (topBlock.artSize > 0 ? topBlock.artSize + 8 : 0)
-                            : (topBlock.height - height) / 2
-                        width: topBlock.width - x
-                        spacing: 2
+                        id: mediaCol
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.topMargin: 14
+                        anchors.leftMargin: root.portrait ? 20 : 25
+                        anchors.rightMargin: root.portrait ? 20 : 25
+                        spacing: 6
+
+                        Item {
+                            id: topBlock
+                            width: parent.width
+                            readonly property real artSize: mediaPanel.artShown ? (root.portrait ? width : 52) : 0
+                            height: root.portrait
+                                ? artSize + (artSize > 0 ? 8 : 0) + textCol.height
+                                : Math.max(artSize, textCol.height)
+
+                            Item {
+                                visible: mediaPanel.artShown
+                                width: topBlock.artSize
+                                height: topBlock.artSize
+
+                                Image {
+                                    id: artImg
+                                    anchors.fill: parent
+                                    source: root.showArt ? root.artUrl : ""
+                                    sourceSize: Qt.size(400, 400)
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    smooth: true
+                                    visible: false
+                                }
+
+                                Rectangle {
+                                    id: artMask
+                                    anchors.fill: parent
+                                    radius: root.portrait ? 16 : 10
+                                    visible: false
+                                    layer.enabled: true
+                                }
+
+                                MultiEffect {
+                                    anchors.fill: parent
+                                    source: artImg
+                                    maskEnabled: true
+                                    maskSource: artMask
+                                }
+                            }
+
+                            Column {
+                                id: textCol
+                                readonly property bool sameLine: !root.portrait && !root.artistBelow
+                                x: root.portrait ? 0 : (topBlock.artSize > 0 ? topBlock.artSize + 12 : 0)
+                                y: root.portrait
+                                    ? (topBlock.artSize > 0 ? topBlock.artSize + 8 : 0)
+                                    : (topBlock.height - height) / 2
+                                width: topBlock.width - x
+                                spacing: 2
+
+                                Item {
+                                    width: parent.width
+                                    height: titleText.implicitHeight
+
+                                    Text {
+                                        id: titleText
+                                        width: textCol.sameLine ? parent.width / 2 - 5 : parent.width
+                                        text: root.title || "Nothing playing"
+                                        horizontalAlignment: root.portrait ? Text.AlignHCenter : Text.AlignLeft
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                        color: Theme.text
+                                    }
+                                    Text {
+                                        visible: textCol.sameLine
+                                        anchors.right: parent.right
+                                        width: parent.width / 2 - 5
+                                        text: root.artist || "No artist"
+                                        horizontalAlignment: Text.AlignRight
+                                        elide: Text.ElideLeft
+                                        font.pixelSize: 11
+                                        color: Theme.text
+                                        opacity: 0.65
+                                    }
+                                }
+
+                                Text {
+                                    visible: !textCol.sameLine
+                                    width: parent.width
+                                    text: root.artist || "No artist"
+                                    horizontalAlignment: root.portrait ? Text.AlignHCenter : Text.AlignLeft
+                                    elide: Text.ElideRight
+                                    font.pixelSize: 11
+                                    color: Theme.text
+                                    opacity: 0.65
+                                }
+                            }
+                        }
+
+                        Item {
+                            id: visualizer
+                            visible: root.showVisualizer
+                            width: parent.width
+                            height: 20
+                            readonly property real barSpacing: 3
+                            readonly property real barWidth: (width - barSpacing * (root.barCount - 1)) / root.barCount
+
+                            Repeater {
+                                model: root.barCount
+                                Rectangle {
+                                    required property int index
+                                    x: index * (visualizer.barWidth + visualizer.barSpacing)
+                                    width: visualizer.barWidth
+                                    radius: Math.min(root.barRadius, width / 2)
+                                    color: Theme.text
+                                    opacity: ((index + 0.5) / root.barCount) <= root.progress ? 0.9 : 0.3
+                                    height: Math.max(3, ((root.bars[index] ?? 0) / 100) * visualizer.height)
+                                    y: visualizer.height - height
+                                    Behavior on height { NumberAnimation { duration: 60 } }
+                                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                                }
+                            }
+                        }
+
+                        Item {
+                            visible: !root.showVisualizer
+                            width: parent.width
+                            height: 20
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width
+                                height: 4
+                                radius: Math.min(root.barRadius, 2)
+                                color: Theme.text
+                                opacity: 0.3
+                            }
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width * root.progress
+                                height: 4
+                                radius: Math.min(root.barRadius, 2)
+                                color: Theme.text
+                                opacity: 0.9
+                            }
+                        }
 
                         Item {
                             width: parent.width
-                            height: titleText.implicitHeight
+                            height: 26
 
-                            Text {
-                                id: titleText
-                                width: textCol.sameLine ? parent.width / 2 - 5 : parent.width
-                                text: root.title || "Nothing playing"
-                                horizontalAlignment: root.portrait ? Text.AlignHCenter : Text.AlignLeft
-                                elide: Text.ElideRight
-                                font.pixelSize: 13
-                                font.bold: true
-                                color: Theme.text
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 28
+
+                                GlyphButton {
+                                    text: "󰒮"
+                                    font.pixelSize: 19
+                                    onClicked: root.mediaCmd("previous")
+                                }
+                                GlyphButton {
+                                    text: root.playing ? "󰏤" : "󰐊"
+                                    font.pixelSize: 21
+                                    onClicked: root.mediaCmd("play-pause")
+                                }
+                                GlyphButton {
+                                    text: "󰒭"
+                                    font.pixelSize: 19
+                                    onClicked: root.mediaCmd("next")
+                                }
                             }
-                            Text {
-                                visible: textCol.sameLine
-                                anchors.right: parent.right
-                                width: parent.width / 2 - 5
-                                text: root.artist || "No artist"
-                                horizontalAlignment: Text.AlignRight
-                                elide: Text.ElideLeft
-                                font.pixelSize: 11
-                                color: Theme.text
-                                opacity: 0.65
-                            }
-                        }
-
-                        Text {
-                            visible: !textCol.sameLine
-                            width: parent.width
-                            text: root.artist || "No artist"
-                            horizontalAlignment: root.portrait ? Text.AlignHCenter : Text.AlignLeft
-                            elide: Text.ElideRight
-                            font.pixelSize: 11
-                            color: Theme.text
-                            opacity: 0.65
                         }
                     }
                 }
 
                 Item {
-                    id: visualizer
-                    visible: root.showVisualizer
-                    width: parent.width
-                    height: 20
-                    readonly property real barSpacing: 3
-                    readonly property real barWidth: (width - barSpacing * (root.barCount - 1)) / root.barCount
-
-                    Repeater {
-                        model: root.barCount
-                        Rectangle {
-                            required property int index
-                            x: index * (visualizer.barWidth + visualizer.barSpacing)
-                            width: visualizer.barWidth
-                            radius: Math.min(root.barRadius, width / 2)
-                            color: Theme.text
-                            opacity: ((index + 0.5) / root.barCount) <= root.progress ? 0.9 : 0.3
-                            height: Math.max(3, ((root.bars[index] ?? 0) / 100) * visualizer.height)
-                            y: visualizer.height - height
-                            Behavior on height { NumberAnimation { duration: 60 } }
-                            Behavior on opacity { NumberAnimation { duration: 200 } }
-                        }
-                    }
-                }
-
-                Item {
-                    visible: !root.showVisualizer
-                    width: parent.width
-                    height: 20
-
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width
-                        height: 4
-                        radius: Math.min(root.barRadius, 2)
-                        color: Theme.text
-                        opacity: 0.3
-                    }
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width * root.progress
-                        height: 4
-                        radius: Math.min(root.barRadius, 2)
-                        color: Theme.text
-                        opacity: 0.9
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    height: 26
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 28
-
-                        GlyphButton {
-                            text: "󰒮"
-                            font.pixelSize: 19
-                            onClicked: root.mediaCmd("previous")
-                        }
-                        GlyphButton {
-                            text: root.playing ? "󰏤" : "󰐊"
-                            font.pixelSize: 21
-                            onClicked: root.mediaCmd("play-pause")
-                        }
-                        GlyphButton {
-                            text: "󰒭"
-                            font.pixelSize: 19
-                            onClicked: root.mediaCmd("next")
-                        }
-                    }
-                }
-            }
-        }
-
-        Item {
-            id: tools
-            width: root.activeCard.width
-            height: root.toolsHeight
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.horizontalCenterOffset: root.curX
-            anchors.top: parent.top
-            anchors.topMargin: root.topGap + root.curY + root.activeCard.height * root.scaleFactor
-            transformOrigin: Item.Top
-            scale: root.scaleFactor
-            visible: opacity > 0
-            opacity: (root.showing && (root.hovered || root.dragging)) ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 150 } }
-
-            HoverHandler {
-                id: toolsHover
-                enabled: root.showing
-            }
-
-            Item {
-                anchors.centerIn: parent
-                width: 60
-                height: parent.height
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 36; height: 4; radius: 2
-                    color: Theme.text
-                    opacity: (dragArea.containsMouse || root.dragging) ? 1 : 0.3
+                    id: tools
+                    width: win.activeCard.width
+                    height: root.toolsHeight
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.horizontalCenterOffset: root.curX
+                    anchors.top: parent.top
+                    anchors.topMargin: root.topGap + root.curY + win.activeCard.height * root.scaleFactor
+                    transformOrigin: Item.Top
+                    scale: root.scaleFactor
+                    visible: opacity > 0
+                    opacity: (root.showing && (root.hovered || root.dragging)) ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: 150 } }
-                }
 
-                DragArea {
-                    id: dragArea
-                    anchors.fill: parent
-                    host: root
-                    scene: scene
-                }
-            }
+                    HoverHandler {
+                        id: toolsHover
+                        enabled: root.showing
+                    }
 
-            FooterButton {
-                visible: root.showMedia
-                anchors.right: settingsButton.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                width: 18; height: 18
-                color: "transparent"
-                label: "\uDB81\uDC03"
-                fontSize: 13
-                active: root.pinned
-                opacity: (hovered || root.pinned) ? 1 : 0.3
-                onClicked: root.togglePinned()
-            }
+                    Item {
+                        anchors.centerIn: parent
+                        width: 60
+                        height: parent.height
 
-            FooterButton {
-                id: settingsButton
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                width: 18; height: 18
-                color: "transparent"
-                label: "󰒓"
-                fontSize: 13
-                active: root.settingsOpen
-                opacity: (hovered || root.settingsOpen) ? 1 : 0.3
-                onClicked: root.toggleSettings()
-            }
-        }
-    }
-}
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 36; height: 4; radius: 2
+                            color: Theme.text
+                            opacity: (dragArea.containsMouse || root.dragging) ? 1 : 0.3
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                        }
 
-PanelWindow {
-    id: settingsWin
+                        DragArea {
+                            id: dragArea
+                            anchors.fill: parent
+                            host: root
+                            scene: scene
+                        }
+                    }
 
-    visible: root.settingsOpen
-    color: "transparent"
-    implicitWidth: 420
-    implicitHeight: layout.height
-    exclusionMode: ExclusionMode.Ignore
+                    FooterButton {
+                        visible: root.showMedia
+                        anchors.right: settingsButton.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        color: "transparent"
+                        label: "\uDB81\uDC03"
+                        fontSize: 13
+                        active: root.pinned
+                        opacity: (hovered || root.pinned) ? 1 : 0.3
+                        onClicked: root.togglePinned()
+                    }
 
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "mediaosd-settings"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
-
-    readonly property real maxContent: Math.max(240, (screen?.height ?? 800) * 0.85 - 186)
-
-    Connections {
-        target: root
-        function onSettingsTabChanged() { flick.contentY = 0 }
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        radius: 20
-        color: Theme.bg
-        border.width: 1
-        border.color: Theme.alpha(Theme.text, 0.12)
-    }
-
-    FocusScope {
-        anchors.fill: parent
-        focus: true
-        Keys.onEscapePressed: root.closeSettings()
-
-        Column {
-            id: layout
-            width: parent.width
-
-            Item {
-                width: parent.width
-                height: 60
-
-                Text {
-                    x: 20; y: 12
-                    text: "OSD settings"
-                    font.pixelSize: 15
-                    font.bold: true
-                    color: Theme.text
-                }
-                Text {
-                    x: 20; y: 34
-                    text: "Changes apply live and are saved automatically"
-                    font.pixelSize: 10
-                    color: Theme.textDim
-                }
-                Text {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 20
-                    y: 10
-                    width: 24; height: 24
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    text: "×"
-                    font.pixelSize: 22
-                    color: closeArea.containsMouse ? Theme.text : Theme.textDim
-                    MouseArea {
-                        id: closeArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: root.closeSettings()
+                    FooterButton {
+                        id: settingsButton
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        color: "transparent"
+                        label: "󰒓"
+                        fontSize: 13
+                        active: root.settingsOpen
+                        opacity: (hovered || root.settingsOpen) ? 1 : 0.3
+                        onClicked: root.toggleSettings()
                     }
                 }
             }
+        }
+    }
 
-            Item {
-                width: parent.width
-                height: 40
+    // ---- settings window: only exists while settings are open -------------
+    // Fixed size on purpose: a window whose height is driven by its content
+    // gets resized right after creation, and the first frame can stay blank
+    // until the pointer enters. Content scrolls inside the Flickable instead.
+    LazyLoader {
+        active: root.settingsOpen
 
+        PanelWindow {
+            id: settingsWin
+
+            color: "transparent"
+            implicitWidth: 420
+            implicitHeight: Math.min(560, (screen?.height ?? 800) * 0.85)
+            exclusionMode: ExclusionMode.Ignore
+
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.namespace: "mediaosd-settings"
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+
+            Connections {
+                target: root
+                function onSettingsTabChanged() { flick.contentY = 0 }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 20
+                color: Theme.bg
+                border.width: 1
+                border.color: Theme.alpha(Theme.text, 0.12)
+            }
+
+            FocusScope {
+                anchors.fill: parent
+                focus: true
+                Keys.onEscapePressed: root.closeSettings()
+
+                // header
+                Item {
+                    id: head
+                    anchors.top: parent.top
+                    width: parent.width
+                    height: 60
+
+                    Text {
+                        x: 20; y: 12
+                        text: "OSD settings"
+                        font.pixelSize: 15
+                        font.bold: true
+                        color: Theme.text
+                    }
+                    Text {
+                        x: 20; y: 34
+                        text: "Hover a popup and drag its handle to move it. Changes are saved automatically."
+                        font.pixelSize: 10
+                        color: Theme.textDim
+                    }
+                    Text {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 20
+                        y: 10
+                        width: 24; height: 24
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        text: "×"
+                        font.pixelSize: 22
+                        color: closeArea.containsMouse ? Theme.text : Theme.textDim
+                        MouseArea {
+                            id: closeArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: root.closeSettings()
+                        }
+                    }
+                }
+
+                // tabs
                 Rectangle {
+                    id: tabs
+                    anchors.top: head.bottom
                     x: 20
                     width: parent.width - 40
                     height: 32
@@ -1015,169 +1045,104 @@ PanelWindow {
                         anchors.margins: 4
 
                         TabButton {
-                            width: parent.width / 3
+                            width: parent.width / 2
                             label: "Media"
                             selected: root.settingsTab === "media"
                             onClicked: root.setSettingsTab("media")
                         }
                         TabButton {
-                            width: parent.width / 3
+                            width: parent.width / 2
                             label: "Volume"
                             selected: root.settingsTab === "volume"
                             onClicked: root.setSettingsTab("volume")
                         }
-                        TabButton {
-                            width: parent.width / 3
-                            label: "General"
-                            selected: root.settingsTab === "general"
-                            onClicked: root.setSettingsTab("general")
-                        }
                     }
                 }
-            }
 
-            Item {
-                width: parent.width
-                height: 30
-
-                Text {
+                // global scale, always visible (applies to both popups)
+                SliderRow {
+                    id: scaleRow
+                    anchors.top: tabs.bottom
+                    anchors.topMargin: 12
                     x: 20
                     width: parent.width - 40
-                    anchors.verticalCenter: parent.verticalCenter
-                    elide: Text.ElideRight
-                    font.pixelSize: 10
-                    color: Theme.textDim
-                    text: root.settingsTab === "media"
-                        ? "Choose what the media popup shows. Drag its handle to move it."
-                        : root.settingsTab === "volume"
-                            ? "The volume popup stays open while you adjust these."
-                            : "Options that apply to both popups."
+                    host: root
+                    key: "osdScale"
+                    label: "Scale"
                 }
-            }
 
-            Flickable {
-                id: flick
-                width: parent.width
-                height: Math.min(contentCol.height + 12, settingsWin.maxContent)
-                contentWidth: width
-                contentHeight: contentCol.height + 12
-                clip: true
-                flickableDirection: Flickable.VerticalFlick
-                boundsBehavior: Flickable.StopAtBounds
-
-                Column {
-                    id: contentCol
-                    x: 20
-                    width: flick.width - 40
+                Flickable {
+                    id: flick
+                    anchors.top: scaleRow.bottom
+                    anchors.topMargin: 4
+                    anchors.bottom: foot.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    contentWidth: width
+                    contentHeight: contentCol.height + 12
+                    clip: true
+                    flickableDirection: Flickable.VerticalFlick
+                    boundsBehavior: Flickable.StopAtBounds
 
                     Column {
-                        visible: root.settingsTab === "media"
-                        width: parent.width
+                        id: contentCol
+                        x: 20
+                        width: flick.width - 40
 
-                        SectionHeader { text: "Content" }
-                        ToggleRow { host: root; key: "showArt"; label: "Album art"; checked: root.showArt }
-                        ToggleRow { host: root; key: "showVisualizer"; label: "Visualizer"; checked: root.showVisualizer }
-
-                        SectionHeader { text: "Layout" }
-                        ToggleRow { host: root; key: "portrait"; label: "Portrait layout"; checked: root.portrait }
-                        ToggleRow {
-                            host: root
-                            key: "artistBelow"
-                            label: "Artist below title"
-                            checked: root.artistBelow || root.portrait
-                            enabled: !root.portrait
-                        }
-                        SliderRow {
-                            host: root
-                            key: "mediaWidth"
-                            label: "Width"
-                            value: root.mediaWidth
-                            enabled: !root.portrait
-                        }
-                        SliderRow {
-                            host: root
-                            key: "portraitWidth"
-                            label: "Portrait width"
-                            value: root.portraitWidth
-                            enabled: root.portrait
-                        }
-                        SliderRow {
-                            host: root
-                            key: "barCount"
-                            label: "Visualizer bars"
-                            value: root.barCount
-                            enabled: root.showVisualizer
-                        }
-                        SliderRow {
-                            host: root
-                            key: "barRadius"
-                            label: "Roundness"
-                            value: root.barRadius
-                        }
-
-                        SectionHeader { text: "Behavior" }
-                        ToggleRow { host: root; key: "musicOnly"; label: "Music players only"; checked: root.musicOnly }
-                        ToggleRow { host: root; key: "trackChangeOsd"; label: "Pop up on track change"; checked: root.trackChangeOsd }
-                        SliderRow {
-                            host: root
-                            key: "mediaTimeout"
-                            label: "Hide after"
-                            value: root.mediaTimeout
-                        }
-                    }
-
-                    Column {
-                        visible: root.settingsTab === "volume"
-                        width: parent.width
-
-                        SectionHeader { text: "Appearance" }
-                        SliderRow {
-                            host: root
-                            key: "flyoutWidth"
-                            label: "Width"
-                            hint: "Width of the volume popup"
-                            value: root.flyoutWidth
-                        }
-
-                        SectionHeader { text: "Behavior" }
-                        SliderRow {
-                            host: root
-                            key: "volTimeout"
-                            label: "Hide after"
-                            hint: "How long the popup stays after a volume change"
-                            value: root.volTimeout
-                        }
-                    }
-
-                    Column {
-                        visible: root.settingsTab === "general"
-                        width: parent.width
-
-                        SectionHeader { text: "Size" }
-                        SliderRow {
-                            host: root
-                            key: "osdScale"
-                            label: "Scale"
-                            hint: "Resizes both popups"
-                            value: root.osdScale
-                        }
-
-                        SectionHeader { text: "Position" }
-                        Text {
+                        Column {
+                            visible: root.settingsTab === "media"
                             width: parent.width
-                            wrapMode: Text.WordWrap
-                            font.pixelSize: 10
-                            color: Theme.textDim
-                            text: "Hover a popup and drag the handle underneath to move it. Media and volume remember their own spots. Double-click the handle to reset it."
-                        }
-                        Item { width: 1; height: 10 }
-                        Row {
-                            spacing: 8
+
+                            SectionHeader { text: "Content" }
+                            ToggleRow { host: root; key: "showArt"; label: "Album art"; checked: root.showArt }
+                            ToggleRow { host: root; key: "showVisualizer"; label: "Visualizer"; checked: root.showVisualizer }
+
+                            SectionHeader { text: "Layout" }
+                            ToggleRow { host: root; key: "portrait"; label: "Portrait layout"; checked: root.portrait }
+                            ToggleRow {
+                                host: root
+                                key: "artistBelow"
+                                label: "Artist below title"
+                                checked: root.artistBelow || root.portrait
+                                enabled: !root.portrait
+                            }
+                            SliderRow {
+                                host: root
+                                key: root.portrait ? "portraitWidth" : "mediaWidth"
+                                label: "Width"
+                            }
+                            SliderRow {
+                                host: root
+                                key: "barCount"
+                                label: "Bars"
+                                enabled: root.showVisualizer
+                            }
+                            SliderRow { host: root; key: "barRadius"; label: "Round" }
+
+                            SectionHeader { text: "Behavior" }
+                            ToggleRow { host: root; key: "musicOnly"; label: "Music players only"; checked: root.musicOnly }
+                            ToggleRow { host: root; key: "trackChangeOsd"; label: "Pop up on track change"; checked: root.trackChangeOsd }
+                            SliderRow { host: root; key: "mediaTimeout"; label: "Hide" }
+
+                            SectionHeader { text: "Position" }
                             ActionButton {
                                 label: "Reset media position"
                                 enabled: root.mediaMoved
                                 onClicked: root.resetPos(true)
                             }
+                        }
+
+                        Column {
+                            visible: root.settingsTab === "volume"
+                            width: parent.width
+
+                            SectionHeader { text: "Appearance" }
+                            SliderRow { host: root; key: "flyoutWidth"; label: "Width" }
+
+                            SectionHeader { text: "Behavior" }
+                            SliderRow { host: root; key: "volTimeout"; label: "Hide" }
+
+                            SectionHeader { text: "Position" }
                             ActionButton {
                                 label: "Reset volume position"
                                 enabled: root.volumeMoved
@@ -1186,397 +1151,300 @@ PanelWindow {
                         }
                     }
                 }
-            }
 
-            Item {
-                width: parent.width
-                height: 58
-
-                Rectangle {
+                // footer
+                Item {
+                    id: foot
+                    anchors.bottom: parent.bottom
                     width: parent.width
-                    height: 1
-                    color: Theme.alpha(Theme.text, 0.08)
-                }
+                    height: 58
 
-                ActionButton {
-                    x: 20
-                    anchors.verticalCenter: parent.verticalCenter
-                    label: "Reset all"
-                    enabled: root.movedFromDefault
-                    onClicked: root.resetAll()
-                }
-                ActionButton {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 20
-                    anchors.verticalCenter: parent.verticalCenter
-                    label: "Done"
-                    primary: true
-                    onClicked: root.closeSettings()
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: Theme.alpha(Theme.text, 0.08)
+                    }
+
+                    ActionButton {
+                        x: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "Reset all"
+                        enabled: root.modified
+                        onClicked: root.resetAll()
+                    }
+                    ActionButton {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "Done"
+                        primary: true
+                        onClicked: root.closeSettings()
+                    }
                 }
             }
         }
     }
-}
 
-component OsdCard: Rectangle {
-    property bool open: false
-    property var host
-    property real xOffset: 0
-    property real yOffset: 0
+    // ---- reusable components -----------------------------------------------
+    component OsdCard: Rectangle {
+        property bool open: false
+        property var host
+        property real xOffset: 0
+        property real yOffset: 0
 
-    color: Theme.bg
-    anchors.horizontalCenter: parent.horizontalCenter
-    anchors.horizontalCenterOffset: xOffset
-    anchors.top: parent.top
-    anchors.topMargin: host.topGap + yOffset
-    transformOrigin: Item.Top
-    opacity: open ? 1 : 0
-    visible: opacity > 0
-    scale: (open ? 1 : 0.9) * host.scaleFactor
+        color: Theme.bg
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.horizontalCenterOffset: xOffset
+        anchors.top: parent.top
+        anchors.topMargin: host.topGap + yOffset
+        transformOrigin: Item.Top
+        opacity: open ? 1 : 0
+        visible: opacity > 0
+        scale: (open ? 1 : 0.9) * host.scaleFactor
 
-    Behavior on opacity { NumberAnimation { duration: 150 } }
-    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-}
-
-component FooterButton: Rectangle {
-    id: fb
-    property string label: ""
-    property int fontSize: 11
-    property bool active: false
-    readonly property bool hovered: fbArea.containsMouse
-    signal clicked()
-
-    width: 16; height: 16; radius: 6
-    color: Theme.bg
-    Behavior on opacity { NumberAnimation { duration: 120 } }
-
-    Text {
-        anchors.centerIn: parent
-        text: fb.label
-        font.family: "Symbols Nerd Font"
-        font.pixelSize: fb.fontSize
-        font.bold: true
-        color: fb.active ? Theme.accent : (fb.hovered ? Theme.text : Theme.textDim)
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
     }
 
-    MouseArea {
-        id: fbArea
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: fb.clicked()
-    }
-}
+    component FooterButton: Rectangle {
+        id: fb
+        property string label: ""
+        property int fontSize: 11
+        property bool active: false
+        readonly property bool hovered: fbArea.containsMouse
+        signal clicked()
 
-component GlyphButton: Text {
-    signal clicked()
-    font.family: "Symbols Nerd Font"
-    color: Theme.text
-    MouseArea { anchors.fill: parent; onClicked: parent.clicked() }
-}
-
-component DragArea: MouseArea {
-    id: da
-    property var host
-    property Item scene
-    property real pressX: 0
-    property real pressY: 0
-    property real startX: 0
-    property real startY: 0
-
-    hoverEnabled: true
-    acceptedButtons: Qt.LeftButton
-    cursorShape: host.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-
-    function finish() {
-        if (!host.dragging)
-            return
-        host.dragging = false
-        host.saveState()
-    }
-
-    onPressed: function (mouse) {
-        var p = da.mapToItem(da.scene, mouse.x, mouse.y)
-        pressX = p.x
-        pressY = p.y
-        startX = host.curX
-        startY = host.curY
-        host.dragging = true
-    }
-    onPositionChanged: function (mouse) {
-        if (!host.dragging)
-            return
-        var p = da.mapToItem(da.scene, mouse.x, mouse.y)
-        host.setPosition(startX + (p.x - pressX), startY + (p.y - pressY))
-    }
-    onReleased: finish()
-    onCanceled: finish()
-    onDoubleClicked: host.resetPosition()
-}
-
-component TabButton: Rectangle {
-    id: tb
-    property string label: ""
-    property bool selected: false
-    signal clicked()
-
-    height: 24
-    radius: 12
-    color: selected ? Theme.accent : (tbArea.containsMouse ? Theme.alpha(Theme.text, 0.08) : "transparent")
-    Behavior on color { ColorAnimation { duration: 120 } }
-
-    Text {
-        anchors.centerIn: parent
-        text: tb.label
-        font.pixelSize: 11
-        font.bold: true
-        color: tb.selected ? Theme.bg : Theme.textDim
-    }
-
-    MouseArea {
-        id: tbArea
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: tb.clicked()
-    }
-}
-
-component ActionButton: Rectangle {
-    id: ab
-    property string label: ""
-    property bool primary: false
-    signal clicked()
-
-    implicitWidth: abText.implicitWidth + 28
-    width: implicitWidth
-    height: 30
-    radius: 15
-    opacity: enabled ? 1 : 0.4
-    color: primary
-        ? Theme.accent
-        : Theme.alpha(Theme.text, abArea.containsMouse ? 0.18 : 0.1)
-    Behavior on color { ColorAnimation { duration: 120 } }
-
-    Text {
-        id: abText
-        anchors.centerIn: parent
-        text: ab.label
-        font.pixelSize: 11
-        font.bold: true
-        color: ab.primary ? Theme.bg : Theme.text
-    }
-
-    MouseArea {
-        id: abArea
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: ab.clicked()
-    }
-}
-
-component SectionHeader: Item {
-    property string text: ""
-    width: parent?.width ?? 0
-    height: 32
-
-    Text {
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 4
-        text: parent.text
-        font.pixelSize: 10
-        font.bold: true
-        font.letterSpacing: 1.2
-        font.capitalization: Font.AllUppercase
-        color: Theme.textDim
-    }
-}
-
-component ToggleRow: Item {
-    id: tr
-    property var host
-    property string key: ""
-    property string label: ""
-    property bool checked: false
-
-    width: parent?.width ?? 0
-    height: 34
-    opacity: enabled ? 1 : 0.4
-
-    Rectangle {
-        anchors.fill: parent
-        anchors.leftMargin: -8
-        anchors.rightMargin: -8
-        radius: 8
-        color: trArea.containsMouse && tr.enabled ? Theme.alpha(Theme.text, 0.06) : "transparent"
-    }
-
-    Text {
-        anchors.left: parent.left
-        anchors.right: sw.left
-        anchors.rightMargin: 12
-        anchors.verticalCenter: parent.verticalCenter
-        text: tr.label
-        elide: Text.ElideRight
-        font.pixelSize: 12
-        font.bold: true
-        color: Theme.text
-    }
-
-    Rectangle {
-        id: sw
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        width: 36; height: 20; radius: 10
-        color: tr.checked ? Theme.accent : "transparent"
-        border.width: 1
-        border.color: tr.checked ? Theme.accent : Theme.alpha(Theme.text, 0.3)
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        Rectangle {
-            width: 14; height: 14; radius: 7
-            anchors.verticalCenter: parent.verticalCenter
-            x: tr.checked ? parent.width - width - 3 : 3
-            color: tr.checked ? Theme.bg : Theme.text
-            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-        }
-    }
-
-    MouseArea {
-        id: trArea
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: tr.host.toggleSetting(tr.key)
-    }
-}
-
-component SliderRow: Item {
-    id: sl
-    property var host
-    property string key: ""
-    property string label: ""
-    property string hint: ""
-    property real value: 0
-
-    readonly property var spec: host.numSpec[key]
-    readonly property real range: spec.max - spec.min
-    readonly property real frac: (value - spec.min) / range
-    readonly property real defFrac: (spec.def - spec.min) / range
-    readonly property bool changed: value !== spec.def
-
-    width: parent?.width ?? 0
-    height: hint !== "" ? 62 : 48
-    opacity: enabled ? 1 : 0.4
-
-    Text {
-        x: 0; y: 4
-        text: sl.label
-        font.pixelSize: 12
-        font.bold: true
-        color: Theme.text
-    }
-
-    Text {
-        visible: sl.hint !== ""
-        x: 0; y: 21
-        width: parent.width - 80
-        text: sl.hint
-        elide: Text.ElideRight
-        font.pixelSize: 10
-        color: Theme.textDim
-    }
-
-    Row {
-        anchors.right: parent.right
-        y: 3
-        spacing: 6
+        width: 16; height: 16; radius: 6
+        color: Theme.bg
+        Behavior on opacity { NumberAnimation { duration: 120 } }
 
         Text {
-            text: sl.host.fmtValue(sl.key, sl.value)
-            font.pixelSize: 11
+            anchors.centerIn: parent
+            text: fb.label
+            font.family: "Symbols Nerd Font"
+            font.pixelSize: fb.fontSize
             font.bold: true
-            color: Theme.text
-        }
-        Text {
-            width: 14
-            text: "↺"
-            horizontalAlignment: Text.AlignHCenter
-            font.pixelSize: 13
-            color: resetArea.containsMouse ? Theme.accent : Theme.textDim
-            opacity: sl.changed ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 120 } }
-            MouseArea {
-                id: resetArea
-                anchors.fill: parent
-                hoverEnabled: true
-                enabled: sl.changed
-                onClicked: sl.host.resetKey(sl.key)
-            }
-        }
-    }
-
-    Item {
-        id: track
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 2
-        height: 20
-
-        readonly property real knobSize: 14
-        readonly property real span: Math.max(1, width - knobSize)
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            height: 4
-            radius: 2
-            color: Theme.alpha(Theme.text, 0.18)
-        }
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            x: track.knobSize / 2 + sl.defFrac * track.span - 1
-            width: 2; height: 8; radius: 1
-            color: Theme.alpha(Theme.text, 0.35)
-        }
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: sl.frac * track.span + track.knobSize / 2
-            height: 4
-            radius: 2
-            color: Theme.accent
-        }
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            x: sl.frac * track.span
-            width: track.knobSize; height: track.knobSize; radius: track.knobSize / 2
-            color: Theme.text
-            scale: slArea.pressed ? 1.2 : (slArea.containsMouse ? 1.1 : 1)
-            Behavior on scale { NumberAnimation { duration: 100 } }
+            color: fb.active ? Theme.accent : (fb.hovered ? Theme.text : Theme.textDim)
         }
 
         MouseArea {
-            id: slArea
+            id: fbArea
             anchors.fill: parent
             hoverEnabled: true
-            preventStealing: true
-
-            function setFromX(mx) {
-                var f = Math.max(0, Math.min(1, (mx - track.knobSize / 2) / track.span))
-                var steps = Math.round(f * sl.range / sl.spec.step)
-                var v = Math.min(sl.spec.max, sl.spec.min + steps * sl.spec.step)
-                if (v !== sl.value)
-                    sl.host.setNumber(sl.key, v)
-            }
-
-            onPressed: function (mouse) { setFromX(mouse.x) }
-            onPositionChanged: function (mouse) { if (pressed) setFromX(mouse.x) }
-            onReleased: sl.host.saveState()
-            onCanceled: sl.host.saveState()
+            onClicked: fb.clicked()
         }
     }
-}
 
+    component GlyphButton: Text {
+        signal clicked()
+        font.family: "Symbols Nerd Font"
+        color: Theme.text
+        MouseArea { anchors.fill: parent; onClicked: parent.clicked() }
+    }
+
+    component DragArea: MouseArea {
+        id: da
+        property var host
+        property Item scene
+        property real pressX: 0
+        property real pressY: 0
+        property real startX: 0
+        property real startY: 0
+
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+        cursorShape: host.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+        function finish() {
+            if (!host.dragging)
+                return
+            host.dragging = false
+            host.saveState()
+        }
+
+        onPressed: function (mouse) {
+            var p = da.mapToItem(da.scene, mouse.x, mouse.y)
+            pressX = p.x
+            pressY = p.y
+            startX = host.curX
+            startY = host.curY
+            host.dragging = true
+        }
+        onPositionChanged: function (mouse) {
+            if (!host.dragging)
+                return
+            var p = da.mapToItem(da.scene, mouse.x, mouse.y)
+            host.setPosition(startX + (p.x - pressX), startY + (p.y - pressY))
+        }
+        onReleased: finish()
+        onCanceled: finish()
+        onDoubleClicked: host.resetPos(host.showMedia)
+    }
+
+    component TabButton: Rectangle {
+        id: tb
+        property string label: ""
+        property bool selected: false
+        signal clicked()
+
+        height: 24
+        radius: 12
+        color: selected ? Theme.accent : (tbArea.containsMouse ? Theme.alpha(Theme.text, 0.08) : "transparent")
+        Behavior on color { ColorAnimation { duration: 120 } }
+
+        Text {
+            anchors.centerIn: parent
+            text: tb.label
+            font.pixelSize: 11
+            font.bold: true
+            color: tb.selected ? Theme.bg : Theme.textDim
+        }
+
+        MouseArea {
+            id: tbArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: tb.clicked()
+        }
+    }
+
+    component ActionButton: Rectangle {
+        id: ab
+        property string label: ""
+        property bool primary: false
+        signal clicked()
+
+        implicitWidth: abText.implicitWidth + 28
+        width: implicitWidth
+        height: 30
+        radius: 15
+        opacity: enabled ? 1 : 0.4
+        color: primary
+            ? Theme.accent
+            : Theme.alpha(Theme.text, abArea.containsMouse ? 0.18 : 0.1)
+        Behavior on color { ColorAnimation { duration: 120 } }
+
+        Text {
+            id: abText
+            anchors.centerIn: parent
+            text: ab.label
+            font.pixelSize: 11
+            font.bold: true
+            color: ab.primary ? Theme.bg : Theme.text
+        }
+
+        MouseArea {
+            id: abArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: ab.clicked()
+        }
+    }
+
+    component SectionHeader: Item {
+        property string text: ""
+        width: parent?.width ?? 0
+        height: 32
+
+        Text {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
+            text: parent.text
+            font.pixelSize: 10
+            font.bold: true
+            font.letterSpacing: 1.2
+            font.capitalization: Font.AllUppercase
+            color: Theme.textDim
+        }
+    }
+
+    component ToggleRow: Item {
+        id: tr
+        property var host
+        property string key: ""
+        property string label: ""
+        property bool checked: false
+
+        width: parent?.width ?? 0
+        height: 34
+        opacity: enabled ? 1 : 0.4
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.leftMargin: -8
+            anchors.rightMargin: -8
+            radius: 8
+            color: trArea.containsMouse && tr.enabled ? Theme.alpha(Theme.text, 0.06) : "transparent"
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.right: sw.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: tr.label
+            elide: Text.ElideRight
+            font.pixelSize: 12
+            font.bold: true
+            color: Theme.text
+        }
+
+        Rectangle {
+            id: sw
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: 36; height: 20; radius: 10
+            color: tr.checked ? Theme.accent : "transparent"
+            border.width: 1
+            border.color: tr.checked ? Theme.accent : Theme.alpha(Theme.text, 0.3)
+            Behavior on color { ColorAnimation { duration: 150 } }
+
+            Rectangle {
+                width: 14; height: 14; radius: 7
+                anchors.verticalCenter: parent.verticalCenter
+                x: tr.checked ? parent.width - width - 3 : 3
+                color: tr.checked ? Theme.bg : Theme.text
+                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        MouseArea {
+            id: trArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: tr.host.toggleSetting(tr.key)
+        }
+    }
+
+    // Thin adapter around Slider.qml: maps the 0..1 ratio the Slider works
+    // with onto a numSpec entry (min/max/step) and persists on release.
+    // Slider.qml must live in the same directory as this file.
+    component SliderRow: Slider {
+        id: sr
+        property var host
+        property string key: ""
+
+        readonly property var spec: host.numSpec[key]
+        readonly property real range: spec.max - spec.min
+
+        displayText: host.fmtValue(key, host[key])
+        opacity: enabled ? 1 : 0.4
+
+        // Slider writes `value` itself while dragging (which would break a plain
+        // binding), so keep it in sync from the stored setting with a Binding.
+        Binding {
+            target: sr
+            property: "value"
+            value: (sr.host[sr.key] - sr.spec.min) / sr.range
+        }
+
+        onMoved: function (v) {
+            host.setNumber(key, spec.min + Math.round(v * range / spec.step) * spec.step)
+        }
+        onCommitted: {
+            host.saveState()
+            value = (host[key] - spec.min) / range   // snap the knob to the stored step
+        }
+    }
 }

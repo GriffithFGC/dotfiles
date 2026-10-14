@@ -26,6 +26,8 @@ Scope {
     readonly property var sections: ["start", "center", "end"]
     readonly property var statsModes: ["default", "compact"]
 
+    Component.onCompleted: BluetoothState.init()
+    
     FileView {
         id: cfgFile
         path: Quickshell.env("HOME") + "/.config/quickshell/state/bar-state.json"
