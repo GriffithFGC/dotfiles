@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -13,10 +14,21 @@ Scope {
     // ───────────────────────── Config ─────────────────────────
     // Single source of truth for defaults (used by the adapter AND reset).
     readonly property var defaults: ({
-        position: "top", style: "joined", thickness: 20, margin: 4,
-        scale: 1.0, bgOpacity: 0.7, border: false,
-        statsMode: "compact", tooltips: true, tooltipHints: true,
-        hidden: "stats,wall,settings",
+        // layout
+        position: "left", style: "joined", thickness: 20, margin: 4,
+        reserveSpace: true, allScreens: true,
+        // appearance
+        scale: 1.0, bgOpacity: 0.5, border: false, radius: 16, calRadius: 15,
+        // tooltips
+        tooltips: true, tooltipHints: true, tipDelay: 450,
+        // modules
+        modPad: 20, wsDot: 10, wsGap: 8, wsScroll: true,
+        statsMode: "compact", statsWarn: 85, batLowPct: 15,
+        volStep: 2, volMax: 100,
+        // clock / calendar
+        clock24: true, clockSeconds: false, weekMonday: true,
+        // module placement
+        hidden: "stats,wall,settings,tasks",
         startMods: "stats,ws",
         centerMods: "clock",
         endMods: "media,volume,battery,net,notif,wall,settings,power"
@@ -26,13 +38,17 @@ Scope {
     readonly property var sections: ["start", "center", "end"]
     readonly property var statsModes: ["default", "compact"]
 
+    // Live config object, edited by BarPage (the settings page).
+    readonly property var config: cfg
+
     Component.onCompleted: BluetoothState.init()
-    
+
     FileView {
         id: cfgFile
         path: Quickshell.env("HOME") + "/.config/quickshell/state/bar-state.json"
         printErrors: false
-        onAdapterUpdated: saveTimer.restart()
+        watchChanges: true                 // BarPage writes this file; pick its changes up live
+        onFileChanged: reload()
         onLoadFailed: error => { if (error === FileViewError.FileNotFound) writeAdapter(); }
 
         adapter: JsonAdapter {
@@ -41,12 +57,28 @@ Scope {
             property string style: root.defaults.style
             property int thickness: root.defaults.thickness
             property int margin: root.defaults.margin
+            property bool reserveSpace: root.defaults.reserveSpace   // push windows away from the bar
+            property bool allScreens: root.defaults.allScreens       // false → first screen only
             property real scale: root.defaults.scale
             property real bgOpacity: root.defaults.bgOpacity
             property bool border: root.defaults.border
-            property string statsMode: root.defaults.statsMode   // "default" | "compact"
+            property int radius: root.defaults.radius            // bar corner radius
+            property int calRadius: root.defaults.calRadius      // calendar popup corner radius
             property bool tooltips: root.defaults.tooltips
             property bool tooltipHints: root.defaults.tooltipHints // show "Left click: ..." lines in tooltips
+            property int tipDelay: root.defaults.tipDelay        // ms before a tooltip appears
+            property int modPad: root.defaults.modPad            // horizontal padding of text modules
+            property int wsDot: root.defaults.wsDot              // workspace dot size
+            property int wsGap: root.defaults.wsGap              // gap between workspace dots
+            property bool wsScroll: root.defaults.wsScroll       // scroll on workspaces to switch
+            property string statsMode: root.defaults.statsMode   // "default" | "compact"
+            property int statsWarn: root.defaults.statsWarn      // CPU/RAM % that turns red
+            property int batLowPct: root.defaults.batLowPct      // battery % that turns red
+            property int volStep: root.defaults.volStep          // % per scroll notch
+            property int volMax: root.defaults.volMax            // max volume %
+            property bool clock24: root.defaults.clock24
+            property bool clockSeconds: root.defaults.clockSeconds
+            property bool weekMonday: root.defaults.weekMonday   // calendar week starts on Monday
             property string hidden: root.defaults.hidden         // comma list of disabled modules
             property string startMods: root.defaults.startMods
             property string centerMods: root.defaults.centerMods
@@ -54,9 +86,12 @@ Scope {
         }
     }
 
+    // Only the bar's own changes (IPC) are saved from here; BarPage saves its own.
     Timer { id: saveTimer; interval: 300; onTriggered: cfgFile.writeAdapter() }
+    function save() { saveTimer.restart(); }
 
     function resetSettings() { for (const k in defaults) cfg[k] = defaults[k]; }
+    readonly property bool modified: Object.keys(defaults).some(k => cfg[k] !== defaults[k])
 
     // ───────────────────────── Derived layout ─────────────────────────
     readonly property bool vertical: cfg.position === "left" || cfg.position === "right"
@@ -65,7 +100,7 @@ Scope {
     readonly property int panelThick: vertical ? cfg.thickness + 12 : cfg.thickness
     readonly property int effEdge: strip ? 0 : cfg.margin
     readonly property int effGap: strip ? 0 : 6
-    readonly property real barRadius: strip ? 0 : Theme.radius
+    readonly property real barRadius: strip ? 0 : cfg.radius
     readonly property color bgColor: Qt.alpha(Theme.bg, cfg.bgOpacity)
     readonly property color borderColor: Qt.alpha(Theme.accent, 0.25)
 
@@ -74,6 +109,7 @@ Scope {
     readonly property var sz: ({
         stat: s(12), clock: s(12), marquee: s(11),
         icon: s(16), batIcon: s(13), batText: s(12), power: s(13),
+        taskIcon: s(18),
         calTime: s(30), calDate: s(12), calMonth: s(13), calArrow: s(16),
         calWeekday: s(11), calDay: s(12)
     })
@@ -88,6 +124,86 @@ Scope {
         return alongBar ? effGap : 0;
     }
 
+    // ───────────────────────── App icon resolution ─────────────────────────
+    // Resolves an icon for ANY window (rofi, Steam, Electron apps, XWayland
+    // classes, Flatpaks, reverse-DNS app ids, absolute icon paths, ...).
+    // Tries many candidates and returns the first that actually exists.
+    function iconFor(appId) {
+        const id = appId ?? "";
+        const low = id.toLowerCase();
+        const cands = [];
+        const add = c => { if (c && c !== "" && cands.indexOf(c) < 0) cands.push(c); };
+
+        // 1) desktop entry (matches StartupWMClass, id, name, ...)
+        let entry = null;
+        try {
+            entry = DesktopEntries.heuristicLookup(id)
+                 ?? DesktopEntries.heuristicLookup(low)
+                 ?? DesktopEntries.byId(id)
+                 ?? DesktopEntries.byId(low);
+        } catch (e) { entry = null; }
+        if (entry) {
+            add(entry.icon);
+            add(entry.id);
+            add((entry.id ?? "").toLowerCase());
+        }
+
+        // 2) the app id itself, in several spellings
+        add(id);
+        add(low);
+        add(low.replace(/\s+/g, "-"));
+        add(low.replace(/[._\s]+/g, "-"));
+        const parts = low.split(".");
+        if (parts.length > 1) {
+            add(parts[parts.length - 1]);          // org.gnome.Nautilus → nautilus
+            add(parts.slice(-2).join("-"));
+        }
+        const dash = low.split("-");
+        if (dash.length > 1) add(dash[0]);         // google-chrome-stable → google
+
+        // 3) first candidate that resolves wins
+        for (const c of cands) {
+            if (c.startsWith("/")) return "file://" + c;      // absolute path in .desktop
+            if (c.startsWith("file://") || c.startsWith("image://")) return c;
+            const p = Quickshell.iconPath(c, true);            // true → "" when missing
+            if (p !== "") return p;
+        }
+
+        // 4) generic fallbacks
+        return Quickshell.iconPath("application-x-executable", true)
+            || Quickshell.iconPath("application-default-icon", true)
+            || Quickshell.iconPath("image-missing");
+    }
+
+    // ───────────────────────── Clock formatting ─────────────────────────
+    function clockText(d) {
+        const h24 = d.getHours();
+        const h12 = h24 % 12 || 12;
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const ss = String(d.getSeconds()).padStart(2, "0");
+        if (cfg.clock24)
+            return (cfg.clockSeconds
+                ? String(h24).padStart(2, "0") + ":" + mm + ":" + ss
+                : String(h24).padStart(2, "0") + ":" + mm);
+        const suffix = h24 >= 12 ? "PM" : "AM";
+        return cfg.clockSeconds
+            ? h12 + ":" + mm + ":" + ss + " " + suffix
+            : h12 + ":" + mm + " " + suffix;
+    }
+    function clockVText(d) {
+        const h24 = d.getHours();
+        const h = cfg.clock24
+            ? String(h24).padStart(2, "0")
+            : String(h24 % 12 || 12);
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const parts = [h, mm];
+        if (cfg.clockSeconds)
+            parts.push(String(d.getSeconds()).padStart(2, "0"));
+        if (!cfg.clock24)
+            parts.push(h24 >= 12 ? "PM" : "AM");
+        return parts.join("\n");
+    }
+
     // ───────────────────────── Battery ─────────────────────────
     readonly property var battery: UPower.devices.values.find(d => d.isLaptopBattery)
         ?? (UPower.displayDevice && UPower.displayDevice.isPresent
@@ -98,7 +214,7 @@ Scope {
         && (battery.state === UPowerDeviceState.Charging
             || battery.state === UPowerDeviceState.PendingCharge
             || battery.state === UPowerDeviceState.FullyCharged)
-    readonly property bool batLow: battery !== null && !batCharging && batPct <= 15
+    readonly property bool batLow: battery !== null && !batCharging && batPct <= cfg.batLowPct
     readonly property var batIcons: ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"]
     readonly property string batIcon: batIcons[batPct >= 90 ? 4 : batPct >= 65 ? 3 : batPct >= 40 ? 2 : batPct >= 15 ? 1 : 0]
 
@@ -123,12 +239,13 @@ Scope {
     readonly property var moduleDefs: [
         { id: "stats",    l: "CPU / RAM" },
         { id: "ws",       l: "Workspaces" },
+        { id: "tasks",    l: "Open apps" },
         { id: "media",    l: "Media" },
         { id: "volume",   l: "Volume" },
         { id: "battery",  l: "Battery" },
         { id: "net",      l: "Network",       cmd: "qs ipc call settings network",
                                               hint: "Open network settings" },
-        { id: "notif",    l: "Notifications", cmd: "qs ipc call notifications toggle", g: "\uDB80\uDC9A",
+        { id: "notif",    l: "Notifications", cmd: "qs ipc call notifications toggle", g: "\uDB80\uDC9C",
                                               tip: "Notifications", hint: "Toggle notification panel" },
         { id: "wall",     l: "Wallpapers",    cmd: "qs -n -p ~/.config/quickshell/hyprquickpaper", g: "\uDB80\uDEE9",
                                               tip: "Wallpapers", hint: "Open wallpaper picker" },
@@ -140,7 +257,7 @@ Scope {
     readonly property var moduleIds: moduleDefs.map(d => d.id)
     readonly property var defMap: moduleDefs.reduce((m, d) => { m[d.id] = d; return m; }, {})
     readonly property var comps: ({
-        stats: statsC, ws: wsC, media: mediaC, volume: volumeC, battery: batteryC, icon: iconC
+        stats: statsC, ws: wsC, tasks: tasksC, media: mediaC, volume: volumeC, battery: batteryC, icon: iconC
     })
 
     function csv(str) { return str === "" ? [] : str.split(","); }
@@ -158,7 +275,7 @@ Scope {
     function modVisible(id) {
         if (!isOn(id)) return false;
         switch (id) {
-        case "stats":   return !vertical || cfg.statsMode === "compact";   // compact fits vertical bars
+        case "stats":   return true;   // icon-sized, fits any bar orientation
         case "media":   return Marquee.player !== null && Marquee.title !== "";
         case "battery": return battery !== null;
         default:        return true;
@@ -202,8 +319,6 @@ Scope {
 
     // ───────────────────────── State / IPC ─────────────────────────
     property bool barVisible: true
-    property bool settingsOpen: false
-    property string settingsTab: "bar"      // "bar" | "modules"
     property bool barLive: true
 
     function rebuildBar() { barLive = false; rebuildTimer.restart(); }
@@ -214,22 +329,35 @@ Scope {
         function onStyleChanged() { root.rebuildBar(); }
     }
 
+    // Bar settings now live on the BarPage of the settings app.
+    // Adjust the IPC call below if your settings app names the page differently.
+    function openSettings() { run("qs ipc call settings bar"); }
+
     IpcHandler {
         target: "bar"
         function toggle(): void { root.barVisible = !root.barVisible; }
         function show(): void { root.barVisible = true; }
         function hide(): void { root.barVisible = false; }
-        function setPosition(pos: string): void { if (root.positions.indexOf(pos) >= 0) cfg.position = pos; }
+        function setPosition(pos: string): void {
+            if (root.positions.indexOf(pos) >= 0) { cfg.position = pos; root.save(); }
+        }
         function cyclePosition(): void {
             cfg.position = root.positions[(root.positions.indexOf(cfg.position) + 1) % 4];
+            root.save();
         }
-        function setStyle(st: string): void { if (root.styles.indexOf(st) >= 0) cfg.style = st; }
-        function setStatsMode(mode: string): void { if (root.statsModes.indexOf(mode) >= 0) cfg.statsMode = mode; }
-        function customize(): void { root.settingsOpen = !root.settingsOpen; }
+        function setStyle(st: string): void {
+            if (root.styles.indexOf(st) >= 0) { cfg.style = st; root.save(); }
+        }
+        function setStatsMode(mode: string): void {
+            if (root.statsModes.indexOf(mode) >= 0) { cfg.statsMode = mode; root.save(); }
+        }
+        function customize(): void { root.openSettings(); }
         function moveModule(id: string, section: string): void {
-            if (root.valid(id) && root.sections.indexOf(section) >= 0) root.moveTo(id, section);
+            if (root.valid(id) && root.sections.indexOf(section) >= 0) { root.moveTo(id, section); root.save(); }
         }
-        function shiftModule(id: string, delta: int): void { if (root.valid(id)) root.shiftBy(id, delta); }
+        function shiftModule(id: string, delta: int): void {
+            if (root.valid(id)) { root.shiftBy(id, delta); root.save(); }
+        }
     }
 
     // ───────────────────────── System stats ─────────────────────────
@@ -361,7 +489,7 @@ Scope {
         onHotChanged: if (!hot) { shown = false; suppressed = false; }
 
         Timer {
-            interval: 450
+            interval: cfg.tipDelay
             running: tp.hot && tp.usable && !tp.shown
             onTriggered: tp.shown = true
         }
@@ -388,7 +516,7 @@ Scope {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 6
+                    radius: Math.min(cfg.radius, height / 2)
                     color: root.bgColor
                     border.width: 1
                     border.color: root.borderColor
@@ -451,7 +579,7 @@ Scope {
 
         function secondaryAction() {
             if (secondaryHint !== "") secondary();
-            else root.settingsOpen = !root.settingsOpen;
+            else root.openSettings();
         }
 
         opacity: disabled ? 0.4 : 1
@@ -518,7 +646,7 @@ Scope {
         property bool bold: false
         property real yOffset: 0
         property int spacing: root.sizeIconGap
-        property int padX: 20
+        property int padX: cfg.modPad
 
         readonly property color fg: warning ? Theme.danger : active ? Theme.accent : color
         readonly property string shown: root.vertical ? vtext : text
@@ -595,149 +723,10 @@ Scope {
         }
     }
 
-    // ── Settings-window widgets ──
+    // ───────────────────────── Bar helper components ─────────────────────────
     component Rule: Rectangle {
         height: 1
         color: Qt.alpha(Theme.text, 0.12)
-    }
-
-    // Dimmed automatically when `enabled: false` is set on it or a parent.
-    component Toggle: Rectangle {
-        id: tg
-        property bool checked: false
-        signal toggled(bool v)
-        implicitWidth: 34
-        implicitHeight: 18
-        radius: 9
-        opacity: enabled ? 1 : 0.4
-        color: Qt.alpha(checked ? Theme.accent : Theme.text, checked ? 0.6 : 0.15)
-        Rectangle {
-            width: 14; height: 14; radius: 7; y: 2
-            x: tg.checked ? 18 : 2
-            color: Theme.text
-            Behavior on x { NumberAnimation { duration: 120 } }
-        }
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: tg.toggled(!tg.checked)
-        }
-    }
-
-    // `step` snaps the value (0 = continuous)
-    component Slide: Item {
-        id: sl
-        property real from: 0
-        property real to: 1
-        property real value: 0
-        property real step: 0
-        readonly property real frac: (value - from) / (to - from)
-        signal moved(real v)
-        implicitWidth: 160
-        implicitHeight: 20
-        opacity: enabled ? 1 : 0.4
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width; height: 4; radius: 2
-            color: Qt.alpha(Theme.text, 0.15)
-            Rectangle { width: parent.width * sl.frac; height: 4; radius: 2; color: Theme.accent }
-        }
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            x: (sl.width - width) * sl.frac
-            width: 12; height: 12; radius: 6
-            color: Theme.text
-        }
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            function upd(px) {
-                const v = sl.from + Math.max(0, Math.min(1, px / width)) * (sl.to - sl.from);
-                sl.moved(sl.step > 0 ? +(Math.round(v / sl.step) * sl.step).toFixed(3) : v);
-            }
-            onPressed: m => upd(m.x)
-            onPositionChanged: m => { if (pressed) upd(m.x); }
-        }
-    }
-
-    // One button style for everything clickable in the settings window.
-    //   plain    → transparent until selected/hovered (tabs, segments)
-    //   primary  → accent-filled (Done)
-    component Pill: Rectangle {
-        id: pl
-        property string label: ""
-        property bool selected: false
-        property bool plain: false
-        property bool primary: false
-        signal clicked()
-        implicitWidth: Math.max(24, lbl.implicitWidth + 18)
-        implicitHeight: 24
-        radius: height / 2
-        opacity: enabled ? 1 : 0.35
-        color: selected || primary ? Qt.alpha(Theme.accent, 0.4)
-             : plMa.containsMouse ? Qt.alpha(Theme.text, 0.14)
-             : plain ? "transparent" : Qt.alpha(Theme.text, 0.08)
-        Behavior on color { ColorAnimation { duration: 100 } }
-        Text {
-            id: lbl
-            anchors.centerIn: parent
-            text: pl.label
-            color: pl.plain && !pl.selected ? Theme.textDim : Theme.text
-            font.family: Theme.iconFont
-            font.pixelSize: 11
-            font.capitalization: Font.Capitalize
-        }
-        MouseArea {
-            id: plMa
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: pl.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: pl.clicked()
-        }
-    }
-
-    // Segmented control built from Pills
-    component Seg: Rectangle {
-        id: seg
-        property var options: []
-        property string current: ""
-        signal picked(string v)
-        implicitWidth: segRow.implicitWidth + 4
-        implicitHeight: 26
-        radius: 13
-        color: Qt.alpha(Theme.text, 0.08)
-        Row {
-            id: segRow
-            anchors.centerIn: parent
-            Repeater {
-                model: seg.options
-                delegate: Pill {
-                    required property string modelData
-                    height: 22
-                    plain: true
-                    label: modelData
-                    selected: modelData === seg.current
-                    onClicked: seg.picked(modelData)
-                }
-            }
-        }
-    }
-
-    // Label on the left; whatever you put inside goes on the right.
-    component SetRow: RowLayout {
-        property string label: ""
-        Layout.fillWidth: true
-        spacing: 8
-        opacity: enabled ? 1 : 0.4
-        Text {
-            Layout.fillWidth: true
-            text: parent.label
-            elide: Text.ElideRight
-            color: Theme.text
-            font.family: Theme.iconFont
-            font.pixelSize: 12
-        }
     }
 
     component Arrow: Item {
@@ -795,8 +784,10 @@ Scope {
     Component {
         id: iconC
         Mod {
+            id: ic
             property var def: root.defMap[mid] ?? ({})
             readonly property bool isNet: mid === "net"
+            readonly property bool isNotif: mid === "notif"
             baseSize: mid === "power" ? root.sz.power : root.sz.icon
             yOffset: root.iconYOffset
             text: isNet ? root.netGlyph : (def.g ?? "")
@@ -804,33 +795,105 @@ Scope {
             primaryHint: def.hint ?? ""
             warning: isNet && root.netState === "disconnected"
             onPrimary: if (def.cmd) root.run(def.cmd)
+
+            // Notification count badge (top-right of the icon)
+            Rectangle {
+                visible: ic.isNotif && root.notifCount > 0
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.horizontalCenterOffset: Math.round(root.sz.icon / 2)
+                anchors.verticalCenterOffset: -Math.round(root.sz.icon / 2) + 1
+                width: Math.max(height, badgeText.implicitWidth + 6)
+                height: Math.max(11, badgeText.implicitHeight + 1)
+                radius: height / 2
+                color: Theme.bg
+
+                Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: root.notifCount > 9 ? "9+" : root.notifCount
+                    color: Theme.text
+                    font.family: Theme.iconFont
+                    font.pixelSize: Math.max(8, root.s(8))
+                    font.bold: true
+                    renderType: Text.NativeRendering
+                }
+            }
         }
     }
 
-    // CPU / RAM — "default": `CPU 12%`   "compact": small icon + `12%`
+    // CPU / RAM — rounded badges, value only (no %)
+    //   "compact": round badge, same size as the app icons, number only
+    //   "default": capsule with label + number ("CPU 12" / stacked on vertical bars)
     Component {
         id: statsC
         Lane {
+            gap: 2
             Repeater {
                 model: ["CPU", "RAM"]
-                delegate: Mod {
+                delegate: Interactive {
+                    id: stat
                     required property string modelData
                     readonly property bool isCpu: modelData === "CPU"
                     readonly property bool compact: cfg.statsMode === "compact"
                     readonly property int val: isCpu ? root.cpuUsage : root.memPercent
+                    readonly property color fg: warning ? Theme.danger : Theme.text
+                    readonly property int fontPx: Math.round(root.sz.taskIcon * 0.5)
 
-                    baseSize: root.sz.stat
-                    glyphSize: root.sz.stat + 2
-                    glyph: compact ? (isCpu ? "\uDB81\uDE1A" : "\uDB80\uDF5B") : ""
-                    text: compact ? val + "%" : modelData + " " + val + "%"
-                    spacing: compact ? 4 : root.sizeIconGap
-                    padX: compact ? 12 : 20
+                    Layout.alignment: Qt.AlignCenter
+                    implicitWidth: root.vertical ? root.panelThick : badge.width + 8
+                    implicitHeight: root.vertical ? badge.height + 8
+                                                  : Math.max(root.panelThick - 2, badge.height + 6)
 
                     interactive: false
-                    warning: val >= 85
+                    warning: val >= cfg.statsWarn
                     tip: isCpu ? "CPU usage: " + val + "%"
                                : "Memory: " + root.memUsedG.toFixed(1) + " / " + root.memTotalG.toFixed(1)
                                  + " GiB (" + val + "%)"
+
+                    Rectangle {
+                        id: badge
+                        anchors.centerIn: parent
+                        // compact: circle the size of an app icon
+                        // default: capsule sized to its label + number
+                        width: stat.compact ? root.sz.taskIcon
+                             : root.vertical ? root.sz.taskIcon + 6
+                             : statRow.implicitWidth + 14
+                        height: stat.compact ? root.sz.taskIcon
+                              : root.vertical ? statRow.implicitHeight + 10
+                              : root.sz.taskIcon
+                        radius: Math.min(width, height) / 2
+                        color: Qt.alpha(stat.fg, 0.045)
+                        border.width: 1
+                        border.color: Qt.alpha(stat.fg, 0.18)
+
+                        GridLayout {
+                            id: statRow
+                            anchors.centerIn: parent
+                            flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                            rowSpacing: 0
+                            columnSpacing: 4
+
+                            Text {
+                                visible: !stat.compact
+                                Layout.alignment: Qt.AlignCenter
+                                text: stat.modelData
+                                color: Qt.alpha(stat.fg, 0.75)
+                                font.family: Theme.iconFont
+                                font.pixelSize: stat.fontPx - 1
+                                renderType: Text.NativeRendering
+                            }
+                            Text {
+                                Layout.alignment: Qt.AlignCenter
+                                text: stat.val
+                                color: stat.fg
+                                font.family: Theme.iconFont
+                                font.bold: true
+                                font.pixelSize: stat.fontPx
+                                renderType: Text.NativeRendering
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -845,7 +908,7 @@ Scope {
             Lane {
                 id: wsLane
                 anchors.centerIn: parent
-                gap: 8
+                gap: cfg.wsGap
 
                 Repeater {
                     model: Hyprland.workspaces
@@ -854,9 +917,11 @@ Scope {
                         required property var modelData
                         visible: modelData.id > 0
                         Layout.alignment: Qt.AlignCenter
-                        implicitWidth: root.vertical ? 10 : (modelData.focused ? 32 : 10)
-                        implicitHeight: root.vertical ? (modelData.focused ? 24 : 10) : 10
-                        radius: 5
+                        implicitWidth: root.vertical ? cfg.wsDot
+                                     : (modelData.focused ? Math.round(cfg.wsDot * 3.2) : cfg.wsDot)
+                        implicitHeight: root.vertical ? (modelData.focused ? Math.round(cfg.wsDot * 2.4) : cfg.wsDot)
+                                                      : cfg.wsDot
+                        radius: cfg.wsDot / 2
                         color: modelData.urgent ? Theme.danger
                              : modelData.focused ? Qt.alpha(Theme.accent, 0.2)
                              : dotMa.containsMouse ? Theme.accent2
@@ -873,7 +938,7 @@ Scope {
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             onPressed: { dotTip.suppressed = true; dotTip.shown = false; }
                             onClicked: mouse => {
-                                if (mouse.button === Qt.RightButton) root.settingsOpen = !root.settingsOpen;
+                                if (mouse.button === Qt.RightButton) root.openSettings();
                                 else dot.modelData.activate();
                             }
                         }
@@ -890,6 +955,7 @@ Scope {
             }
 
             WheelHandler {
+                enabled: cfg.wsScroll
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 onWheel: e => root.run("hyprctl dispatch 'hl.dsp.focus({workspace=\"e"
                                        + (e.angleDelta.y > 0 ? "+1" : "-1") + "\"})'")
@@ -897,6 +963,49 @@ Scope {
         }
     }
 
+    // Open apps — icons resolved by root.iconFor() so every app gets one
+    Component {
+        id: tasksC
+        Lane {
+            gap: 2
+            Repeater {
+                model: ToplevelManager.toplevels
+                delegate: Interactive {
+                    id: task
+                    required property var modelData
+                    Layout.alignment: Qt.AlignCenter
+                    implicitWidth: root.vertical ? root.panelThick : root.sz.taskIcon + 10
+                    implicitHeight: root.vertical ? root.sz.taskIcon + 10
+                                                  : Math.max(root.panelThick - 2, root.sz.taskIcon + 6)
+                    active: modelData.activated
+                    tip: modelData.title !== "" ? modelData.title : modelData.appId
+                    primaryHint: "Focus window"
+                    tertiaryHint: "Close window"
+                    onPrimary: modelData.activate()
+                    onTertiary: modelData.close()
+                    Image {
+                        id: appIcon
+                        anchors.centerIn: parent
+                        width: root.sz.taskIcon
+                        height: root.sz.taskIcon
+                        sourceSize: Qt.size(width, height)
+                        asynchronous: true
+                        smooth: true
+                        visible: false          // rendered through the tint effect below
+                        source: root.iconFor(task.modelData.appId)
+                    }
+                    // Flat monochrome icon in Theme.text (accent when the window is focused)
+                    MultiEffect {
+                        anchors.fill: appIcon
+                        source: appIcon
+                        colorization: 1.0
+                        colorizationColor: task.modelData.activated ? Theme.accent : Theme.text
+                        opacity: task.modelData.activated ? 1 : 0.75
+                    }
+                }
+            }
+        }
+    }
     Component {
         id: mediaC
         Interactive {
@@ -946,7 +1055,8 @@ Scope {
             onSecondary: root.run("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
             onScrolled: delta => {
                 if (!ready) return;
-                sink.audio.volume = Math.max(0, Math.min(1.0, sink.audio.volume + (delta / 120) * 0.02));
+                sink.audio.volume = Math.max(0, Math.min(cfg.volMax / 100,
+                    sink.audio.volume + (delta / 120) * (cfg.volStep / 100)));
             }
         }
     }
@@ -954,146 +1064,19 @@ Scope {
     Component {
         id: batteryC
         Mod {
-            baseSize: root.sz.batText
-            glyphSize: root.sz.batIcon
-            glyph: (root.batCharging ? "\uf0e7 " : "") + root.batIcon
-            vglyph: root.batIcon
-            text: root.batPct + "%"
-            vtext: root.batPct + ""
-            interactive: false
+            glyphSize: root.sz.icon
+            glyph: root.batIcon
             warning: root.batLow
-            active: root.vertical && root.batCharging
+            active: root.batCharging
             tip: root.batTip
-        }
-    }
-
-    // ───────────────────────── Settings window ─────────────────────────
-    LazyLoader {
-        active: root.settingsOpen
-
-        PanelWindow {
-            implicitWidth: 420
-            implicitHeight: col.implicitHeight + 36
-            color: "transparent"
-            exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.namespace: "bar-settings"
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 20
-                color: Theme.bg
-                border.width: 1
-                border.color: Qt.alpha(Theme.text, 0.12)
-                focus: true
-                Keys.onEscapePressed: root.settingsOpen = false
-
-                ColumnLayout {
-                    id: col
-                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 18 }
-                    spacing: 12
-
-                    // header: title · tabs · close
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Bar settings"
-                            color: Theme.text
-                            font.family: Theme.iconFont
-                            font.pixelSize: 15
-                            font.bold: true
-                        }
-                        Seg { options: ["bar", "modules"]; current: root.settingsTab; onPicked: v => root.settingsTab = v }
-                        Pill { label: "×"; plain: true; onClicked: root.settingsOpen = false }
-                    }
-
-                    // ── Bar ──
-                    ColumnLayout {
-                        visible: root.settingsTab === "bar"
-                        Layout.fillWidth: true
-                        spacing: 10
-
-                        SetRow { label: "Position"; Seg { options: root.positions; current: cfg.position; onPicked: v => cfg.position = v } }
-                        SetRow { label: "Style"; Seg { options: root.styles; current: cfg.style; onPicked: v => cfg.style = v } }
-                        SetRow { label: "CPU / RAM"; Seg { options: root.statsModes; current: cfg.statsMode; onPicked: v => cfg.statsMode = v } }
-
-                        SetRow {
-                            label: "Thickness  " + cfg.thickness
-                            Slide { from: 16; to: 40; step: 1; value: cfg.thickness; onMoved: v => cfg.thickness = v }
-                        }
-                        SetRow {
-                            label: "Edge margin  " + cfg.margin
-                            enabled: !root.strip
-                            Slide { from: 0; to: 16; step: 1; value: cfg.margin; onMoved: v => cfg.margin = v }
-                        }
-                        SetRow {
-                            label: "Text scale  " + cfg.scale.toFixed(2)
-                            Slide { from: 0.8; to: 1.5; step: 0.05; value: cfg.scale; onMoved: v => cfg.scale = v }
-                        }
-                        SetRow {
-                            label: "Background  " + Math.round(cfg.bgOpacity * 100) + "%"
-                            Slide { from: 0; to: 1; step: 0.05; value: cfg.bgOpacity; onMoved: v => cfg.bgOpacity = v }
-                        }
-
-                        SetRow { label: "Border"; Toggle { checked: cfg.border; onToggled: v => cfg.border = v } }
-                        SetRow { label: "Tooltips"; Toggle { checked: cfg.tooltips; onToggled: v => cfg.tooltips = v } }
-                        SetRow {
-                            label: "Hints in tooltips"
-                            enabled: cfg.tooltips
-                            Toggle { checked: cfg.tooltipHints; onToggled: v => cfg.tooltipHints = v }
-                        }
-                    }
-
-                    // ── Modules ──
-                    ColumnLayout {
-                        visible: root.settingsTab === "modules"
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Repeater {
-                            model: root.moduleDefs
-                            delegate: SetRow {
-                                required property var modelData
-                                label: modelData.l
-
-                                Toggle {
-                                    enabled: !modelData.fixed
-                                    checked: !!modelData.fixed || root.isOn(modelData.id)
-                                    onToggled: v => root.setOn(modelData.id, v)
-                                }
-                                Seg { options: root.sections; current: root.sectionOf(modelData.id); onPicked: v => root.moveTo(modelData.id, v) }
-                                Pill {
-                                    label: root.vertical ? "\u25B2" : "\u25C0"
-                                    enabled: root.canShift(modelData.id, -1)
-                                    onClicked: root.shiftBy(modelData.id, -1)
-                                }
-                                Pill {
-                                    label: root.vertical ? "\u25BC" : "\u25B6"
-                                    enabled: root.canShift(modelData.id, 1)
-                                    onClicked: root.shiftBy(modelData.id, 1)
-                                }
-                            }
-                        }
-                    }
-
-                    Rule { Layout.fillWidth: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Pill { label: "Reset all"; onClicked: root.resetSettings() }
-                        Item { Layout.fillWidth: true }
-                        Pill { label: "Done"; primary: true; onClicked: root.settingsOpen = false }
-                    }
-                }
-            }
         }
     }
 
     // ───────────────────────── The bar ─────────────────────────
     Variants {
-        model: root.barLive ? Quickshell.screens : []
+        model: root.barLive
+            ? (cfg.allScreens ? Quickshell.screens : Quickshell.screens.slice(0, 1))
+            : []
 
         PanelWindow {
             id: bar
@@ -1108,6 +1091,7 @@ Scope {
             }
             implicitWidth: root.vertical ? root.panelThick + root.effEdge : 0
             implicitHeight: root.vertical ? 0 : root.panelThick + root.effEdge
+            exclusionMode: cfg.reserveSpace ? ExclusionMode.Auto : ExclusionMode.Ignore
             color: "transparent"
             visible: root.barVisible
 
@@ -1148,25 +1132,31 @@ Scope {
                     property bool calOpen: false
                     property int monthOffset: 0
 
-                    SystemClock { id: clk; precision: SystemClock.Minutes }
+                    SystemClock {
+                        id: clk
+                        precision: cfg.clockSeconds ? SystemClock.Seconds : SystemClock.Minutes
+                    }
 
                     Component {
                         id: clockC
                         Mod {
                             bold: true
                             baseSize: root.sz.clock
-                            text: Qt.formatDateTime(clk.date, "HH:mm")
-                            vtext: Qt.formatDateTime(clk.date, "HH") + "\n" + Qt.formatDateTime(clk.date, "mm")
+                            text: root.clockText(clk.date)
+                            vtext: root.clockVText(clk.date)
                             active: clockPanel.calOpen
                             tip: Qt.formatDate(clk.date, "dddd, d MMMM yyyy")
                             primaryHint: clockPanel.calOpen ? "Close calendar" : "Open calendar"
+                            secondaryHint: "Bar settings"
+                            tertiaryHint: "Settings"
                             onPrimary: {
                                 clockPanel.monthOffset = 0;
                                 clockPanel.calOpen = !clockPanel.calOpen;
                             }
+                            onSecondary: root.run("qs ipc call settings bar")
+                            onTertiary: root.run("qs ipc call settings toggle")
                         }
                     }
-
                     LazyLoader {
                         active: clockPanel.calOpen
 
@@ -1190,12 +1180,12 @@ Scope {
                             Rectangle {
                                 id: calBox
                                 anchors.fill: parent
-                                radius: 4
+                                radius: cfg.calRadius
                                 color: root.bgColor
                                 border.width: cfg.border ? 1 : 0
                                 border.color: root.borderColor
 
-                                readonly property int firstDay: 1
+                                readonly property int firstDay: cfg.weekMonday ? 1 : 0
                                 readonly property int cellW: 36
                                 readonly property int cellH: 30
                                 readonly property int pad: 16
@@ -1230,7 +1220,7 @@ Scope {
                                     Column {
                                         spacing: 2
                                         Text {
-                                            text: Qt.formatTime(calBox.now, "HH:mm")
+                                            text: root.clockText(calBox.now)
                                             color: Theme.text
                                             font.family: Theme.iconFont
                                             font.pixelSize: root.sz.calTime

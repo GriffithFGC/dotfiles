@@ -10,7 +10,7 @@ Item {
     property var cleanupInfo: ({yay:0, pacman:0, journal:0, trash:0, flatpak:0, cliphist:0, thumbs:0})
     property var sdaUsageData: null
     property real marginLeft: 0
-    property real marginRight: 55
+    property real marginRight: 10
     property real marginTop: 0
     property real marginBottom: 0
     property string pendingAction: ""
@@ -154,18 +154,19 @@ Item {
     Rectangle {
         id: confirmPopup
         visible: false; anchors.centerIn: parent; z: 100
-        width: Math.min(parent.width - 30, 420); height: 190; radius: Theme.radius
+        width: Math.min(parent.width - 30, 420); 
+        height: 220; radius: Theme.radius
         color: Theme.bg; border.width: 1; border.color: Theme.accent
 
         Column {
             anchors.fill: parent; anchors.margins: 18; spacing: 12
             Text {
                 text: page.pendingTitle; color: Theme.text
-                font.family: Theme.fontFamily; font.pixelSize: 17; font.bold: true
+                font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeTitle; font.bold: true
             }
             Text {
                 width: parent.width; text: page.pendingMessage; color: Theme.textDim
-                font.family: Theme.fontFamily; font.pixelSize: 13; wrapMode: Text.WordWrap
+                font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeGroup; wrapMode: Text.WordWrap
             }
             Item { width: 1; height: 1 }
             Row {
@@ -193,7 +194,7 @@ Item {
 
         Text {
             text: "STORAGE"; color: Theme.text
-            font.family: Theme.fontFamily; font.pixelSize: 19; font.letterSpacing: 3
+            font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeTitle; font.letterSpacing: 3
         }
 
         Rectangle { width: parent.width; height: 1; color: Theme.border }
@@ -225,7 +226,7 @@ Item {
 
                     Text {
                         text: "DRIVES"; color: Theme.text
-                        font.family: Theme.fontFamily; font.pixelSize: 15; font.bold: true; font.letterSpacing: 2
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeSection; font.bold: true; font.letterSpacing: 2
                     }
 
                     Repeater {
@@ -244,13 +245,13 @@ Item {
                                     Text {
                                         width: parent.width - 70; text: modelData.model || modelData.name || "SSD/HDD"
                                         color: Theme.text; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
-                                        font.family: Theme.fontFamily; font.pixelSize: 13; font.bold: true
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeGroup; font.bold: true
                                     }
                                     Text {
                                         width: 70; text: hasUsage ? Math.round(usedPct) + "%" : "--%"
                                         color: hasUsage ? page.usageColor(usedPct) : Theme.textDim
                                         horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
-                                        font.family: Theme.fontFamily; font.pixelSize: 12; font.bold: true
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeGroup; font.bold: true
                                     }
                                 }
 
@@ -269,16 +270,16 @@ Item {
                                     width: parent.width; height: 13; spacing: 14
                                     Text {
                                         text: page.sdaUsageData ? page.formatBytes(page.sdaUsageData.used) + " USED" : "-- USED"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                     Text {
                                         text: page.sdaUsageData && modelData.size > page.sdaUsageData.used
                                             ? page.formatBytes(modelData.size - page.sdaUsageData.used) + " FREE" : "-- FREE"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                     Text {
                                         text: page.formatBytes(modelData.size) + " TOTAL"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                 }
                             }
@@ -287,7 +288,7 @@ Item {
 
                     Text {
                         text: "FILESYSTEM"; color: Theme.text; topPadding: 4
-                        font.family: Theme.fontFamily; font.pixelSize: 15; font.bold: true; font.letterSpacing: 2
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeSection; font.bold: true; font.letterSpacing: 2
                     }
 
                     Repeater {
@@ -304,12 +305,12 @@ Item {
                                     Text {
                                         width: parent.width - 55; text: modelData.mount
                                         color: Theme.text; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
-                                        font.family: Theme.fontFamily; font.pixelSize: 13; font.bold: true
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeGroup; font.bold: true
                                     }
                                     Text {
                                         width: 55; text: modelData.percent + "%"; color: page.usageColor(modelData.percent)
                                         horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
-                                        font.family: Theme.fontFamily; font.pixelSize: 12; font.bold: true
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeGroup; font.bold: true
                                     }
                                 }
 
@@ -327,15 +328,15 @@ Item {
                                     width: parent.width; height: 13; spacing: 14
                                     Text {
                                         text: page.formatBytes(modelData.used) + " USED"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                     Text {
                                         text: page.formatBytes(modelData.available) + " FREE"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                     Text {
                                         text: page.formatBytes(modelData.total) + " TOTAL"
-                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: 11
+                                        color: Theme.textDim; font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody
                                     }
                                 }
                             }
@@ -344,44 +345,44 @@ Item {
 
                     Text {
                         text: "CLEANUP"; color: Theme.text; topPadding: 4
-                        font.family: Theme.fontFamily; font.pixelSize: 15; font.bold: true; font.letterSpacing: 2
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeSection; font.bold: true; font.letterSpacing: 2
                     }
 
                     Repeater {
                         model: [
                             {
                                 key: "trash", label: "TRASH", action: "EMPTY", title: "EMPTY TRASH?",
-                                message: "This permanently deletes everything in ~/.local/share/Trash.",
+                                message: "This permanently deletes everything in ~/.local/share/Trash.\n\nCommand: rm -rf -- \"$HOME/.local/share/Trash/files/\"* \"$HOME/.local/share/Trash/info/\"*",
                                 command: "rm -rf -- \"$HOME/.local/share/Trash/files/\"* \"$HOME/.local/share/Trash/info/\"*"
                             },
                             {
                                 key: "cliphist", label: "CLIPHIST", action: "WIPE", title: "WIPE CLIPBOARD HISTORY?",
-                                message: "This permanently clears your entire clipboard history (cliphist).",
-                                command: "cliphist wipe"
+                                message: "This keeps the 20 most recent clipboard entries and permanently deletes the rest.\n\nCommand: cliphist list | tail -n +21 | cliphist delete",
+                                command: "cliphist list | tail -n +21 | cliphist delete"
                             },
                             {
                                 key: "thumbs", label: "WALLPAPER PICKER", action: "CLEAR", title: "CLEAR THUMBNAIL CACHE?",
-                                message: "This permanently deletes everything in ~/.cache/quickshell/thumbs.",
+                                message: "This permanently deletes everything in ~/.cache/quickshell/thumbs.\n\nCommand: rm -rf -- \"$HOME/.cache/quickshell/thumbs/\"*",
                                 command: "rm -rf -- \"$HOME/.cache/quickshell/thumbs/\"*"
                             },
                             {
                                 key: "yay", label: "YAY CACHE", action: "CLEAN", title: "CLEAR YAY CACHE?",
-                                message: "CACHE_PLACEHOLDER",
+                                message: "This permanently deletes cached AUR build files and downloaded sources.\n\nCommand: rm -rf -- \"$HOME/.cache/yay/\"*",
                                 command: "rm -rf -- \"$HOME/.cache/yay/\"*"
                             },
                             {
                                 key: "pacman", label: "PACMAN CACHE", action: "CLEAN", title: "CLEAN PACMAN CACHE?",
-                                message: "paccache will remove old package versions while keeping the currently installed packages.",
+                                message: "This removes old cached package versions while keeping the 3 most recent versions by default.\n\nCommand: pkexec paccache -r",
                                 command: "pkexec paccache -r"
                             },
                             {
                                 key: "journal", label: "JOURNAL", action: "7 DAYS", title: "VACUUM JOURNAL?",
-                                message: "Keep only the last 7 days of system logs.",
+                                message: "This permanently deletes system journal logs older than 7 days.\n\nCommand: pkexec journalctl --vacuum-time=7d",
                                 command: "pkexec journalctl --vacuum-time=7d"
                             },
                             {
                                 key: "flatpak", label: "FLATPAK UNUSED", action: "CLEAN", title: "REMOVE UNUSED FLATPAKS?",
-                                message: "This removes unused Flatpak runtimes and packages.",
+                                message: "This removes unused Flatpak runtimes and packages.\n\nCommand: flatpak uninstall --unused -y",
                                 command: "flatpak uninstall --unused -y"
                             }
                         ]
@@ -416,7 +417,7 @@ Item {
         Text {
             anchors.centerIn: parent; text: parent.label
             color: parent.accent ? Theme.accent : Theme.textDim
-            font.family: Theme.fontFamily; font.pixelSize: 11; font.bold: true; font.letterSpacing: .5
+            font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeBody; font.bold: true; font.letterSpacing: .5
         }
 
         MouseArea {
@@ -448,7 +449,7 @@ Item {
             text: cleanupRoot.label
             color: Theme.textDim
             font.family: Theme.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: Theme.textSizeGroup
             font.bold: true
             font.letterSpacing: 2
         }
@@ -463,7 +464,7 @@ Item {
                 text: cleanupRoot.value
                 color: Theme.textDim
                 font.family: Theme.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: Theme.textSizeGroup
                 anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -471,7 +472,7 @@ Item {
                 text: cleanupRoot.actionText
                 color: Theme.textDim
                 font.family: Theme.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: Theme.textSizeGroup
                 font.bold: true
                 font.letterSpacing: 1
                 anchors.verticalCenter: parent.verticalCenter

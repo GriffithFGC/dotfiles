@@ -1,8 +1,8 @@
 <div align="center">
 
-## Hyprland Setup by 43pr メ
+## 43PR Desktop
 
-A clean and simple Hyprland setup focused on practical keybinds, productivity, and easy to customize.
+A simple, lightweight Hyprland setup focused on productivity, practical keybinds, and easy to customize.
 
 ![Hyprland](https://img.shields.io/badge/Hyprland-0.56.2-8b9aaf?style=for-the-badge&labelColor=101418)
 [![Discord](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Finvites%2FHQwU9SzHj%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&style=for-the-badge&logo=discord&logoColor=ffffff&label=discord&labelColor=101418&color=7289a8)](https://discord.gg/HQwU9SzHj)
@@ -11,25 +11,64 @@ A clean and simple Hyprland setup focused on practical keybinds, productivity, a
 
 ### **[Features](#features)  -  [Keybinds](#keybinds)  -  [Installation](#installation) -  [Updating](#updating)**
 
+<p align="center">
+  <sub>
+    <b>English</b> · <a href="docs/README.es.md">Español</a> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.zh-CN.md">中文</a> · <a href="docs/README.ja.md">日本語</a> · <a href="docs/README.pt.md">Português</a> · <a href="docs/README.fr.md">Français</a> · <a href="docs/README.de.md">Deutsch</a>
+  </sub>
+</p>
+
 </div>
 
-<img width="1920" height="1080" alt="1791658361" src="https://github.com/user-attachments/assets/3ce57df8-499e-4b26-9975-354c53665864" />
+<img width="1920" height="1080" alt="1792462138" src="https://github.com/user-attachments/assets/10324a99-1038-431f-9f64-0183e2e04276" />
 
-Wallpapers: https://wallhaven.cc/user/43pr
+<details>
+<summary><b>What is this? Beginner?</b></summary>
+
+### What is this?
+
+This is a full customizable desktop setup for Linux. (bar, app launcher, settings, wallpaper picker, lock screen, power menu, etc). It's built on **Hyprland** (window manager) and **Quickshell** (what the bar and menus are made with). 
+
+### What do I need to run it?
+
+- An **Arch-based Linux distro**: Arch, CachyOS, EndeavourOS, Manjaro, etc.
+- A mostly **clean installation**. Existing configs that get replaced are backed up automatically.
+
+I'd recommend CachyOS for beginners: https://youtu.be/eo9MejbzWto
+
+You can skip the configuration section of the video, now it's automated. Just run the installation command.
+
+### Is it hard to use?
+
+Not really. Almost everything is a keyboard shortcut, with mouse alternatives:
+
+- `Super + I` opens settings - middle-click the clock 
+
+The full list is in [Keybinds](#keybinds). You can also hover over bar elements to see what they do, and right-click the clock for bar settings.
+
+### What should I know before installing?
+
+- Log out and back in once the installer finishes.
+- Wallpapers aren't included in the install. Download some and put them in `Pictures/Wallpapers`.
+
+### Something broke, where do I ask?
+
+Join the [Discord](https://discord.gg/HQwU9SzHj).
+
+</details>
 
 ## Features
 
-- **Top bar** - Customizing options, vertical bar, styles, calendar, controls for volume and media playback.
-- **Settings Menu** — System, network, bluetooth, display, audio, storage, themes, and more.
+- **Fast & Lightweight Quickshell** — Optimized desktop components designed to be fast, and easy to customize.
+- **Top bar** - Customizable bar with settings menu, and quick shortcuts.
+- **Settings** — System, network, bluetooth, display, audio, storage, themes, and more.
 - **Wallpaper picker & Dynamic Colors** — Custom wallpaper selector with automatic wallpaper-based color generation.
-- **Preset Themes** — Default Monochrome, Nord, Tokyo Night, etc, and easily create your own. 
-- **App Launcher** — **Rofi** Application search, clipboard history, and opacity control.
+- **Preset Themes** — Monochrome, Nord, Tokyo Night and other popular ones, with support for creating your own.
+- **App Launcher** — **Rofi** App search, clipboard history, and opacity controls.
 - **Zsh + Starship** — Customizable shell with autosuggestions and history.
-- **Customizable Power Menu** —  Custom power menu. 
-- **Notes / To do** —  Custom quick Notes/To-do. 
+- **Notes & Reminders** —  Quick notes, tasks, and reminders.
+- **Power Menu** — Customizable power menu.
 - **Hyprlock** — Custom lock screen.
 - **Spotify + Spicetify** — Custom theme based on **text - darkthemer**, (modified).
-- **Custom Scripts** — Scripts for workflow and system management.
 
 > All programs: [packages.txt](packages.txt)
 
@@ -39,7 +78,7 @@ Just made some tweaks to it. Give it some love: [hyprquickpaper](https://github.
 
 ## Keybinds
 
-> **You can modify keybinds using HyprMod**
+Right-click the clock to open bar settings. Hover over elements to see actions. To close components use Esc key or use the same keybind. 
 
 | Keybind                 | Action                    |
 | -----------             | ------------------------- |
@@ -53,22 +92,24 @@ Just made some tweaks to it. Give it some love: [hyprquickpaper](https://github.
 | `Super + E`             | File manager              |
 | `Super + B`             | Browser                   |
 | `Super + V`             | Clipboard history         |
-| `Super + S`             | Second launcher           |
 | `Super + I`             | Settings menu             |
-| `Super + W`             | Wallpaper selector        |
+| `Super + S`             | Quick actions             |
 | `Super + O`             | Switch opacity            |
-| `Super + Tab`           | Lock screen               |
-| `Super + Grave`         | Logout menu               |
-| `Super + Shift + W`     | Toggle bar                |
+| `Super + C`             | Notes & Reminders         |
+| `Super + W`             | Wallpaper selector        |
+| `Super + Shift + C`     | Color picker tool         |
 | `Super + Mouse wheel`   | Zoom in/out               |
-| `Super + C`             | Notes/To-do               |
+| `Super + Shift + W`     | Toggle bar                |
+| `Super + Grave`         | Logout menu               |
+| `Super + Tab`           | Lock screen               |
 | `Super + N`             | Notifications             |
+| `Super + R`             | Toggle screen recorder    |
 | `Delete`                | Screenshot fullscreen     |
 | `SHIFT + Delete`        | Screenshot area select    |
 
 > [!note]
 >
-> **Move and resize windows with Super + left/right mouse drag.**
+> Move and resize windows with Super + left/right mouse drag.
 >
 > All keybinds: [.config/hypr/keybinds.lua](.config/hypr/keybinds.lua)
 
@@ -94,9 +135,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-After the installation finishes log out and back in.
-
-Right-click the clock to open Bar Settings. 
+After the installation finishes log out and back in. 
 
 Dowload and move wallpapers to Pictures/Wallpapers. Wallpaper picker: Super + W.
 
@@ -138,12 +177,3 @@ You can check the reminders printed at the end of the run.
 > ```
 >
 > to restart Quickshell automatically.
-
-> [!note]
-> 
-> Custom-gpu parts are specific to my hardware.
->
-> For issues with the wallpaper picker, you can clear the cache from the Storage page in Settings.
-
-
-

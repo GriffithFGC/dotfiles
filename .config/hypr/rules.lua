@@ -13,27 +13,29 @@ hl.window_rule({
     match = { class = ".*" },
     opacity = "0.7 override",
 })
+
 hl.window_rule({
     match = { class = ".*", fullscreen = true },
     opacity = "1.0 override",
 })
 
-hl.window_rule({
-    name = "keepassxc-ws",
-    match = { class = "^(org.keepassxc.KeePassXC)$" },
-    workspace = "4 silent",
-})
-
-hl.window_rule({
-    name = "steam-ws",
-    match = { class = "^(steam)$" },
-    workspace = "4 silent",
-})
-
+--hl.window_rule({
+--    name = "brave",
+--    match = { class = "^brave-browser$" },
+--    opacity = "1.0 override",
+--})
 
 hl.window_rule({
     match = { class = "kitty" },
     suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name = "file-picker-float",
+    match = { class = "^(xdg-desktop-portal-gtk)$" },
+    float = true,
+    center = true,
+    size = "900 600",
 })
 
 hl.window_rule({

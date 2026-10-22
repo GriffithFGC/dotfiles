@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Bluetooth
 import "../"
 
@@ -11,9 +12,56 @@ Item {
     readonly property bool scanning: adapter ? adapter.discovering : false
     property string statusText: ""
     property real marginLeft: 0
-    property real marginRight: 55
+    property real marginRight: 10
     property real marginTop: 0
     property real marginBottom: 0
+
+    // ---- Persisted power state -------------------------------------------
+    // NOTE: if this page is only instantiated when the panel is opened,
+    // move this block (FileView + restorePower) into an always-loaded place
+    // such as your BluetoothState singleton so it runs at shell startup.
+    property bool powerRestored: false
+
+    FileView {
+        id: stateFile
+        path: Quickshell.env("HOME") + "/.local/state/quickshell-bluetooth-power"
+        blockLoading: true
+        printErrors: false
+    }
+
+    function savedPowerState() {
+        try {
+            return (stateFile.text() || "").trim()
+        } catch (e) {
+            return ""   // file doesn't exist yet
+        }
+    }
+
+    function savePowerState(state) {
+        try {
+            stateFile.setText(state)
+        } catch (e) {
+            console.warn("Could not save bluetooth state:", e)
+        }
+    }
+
+    function restorePower() {
+        if (page.powerRestored || !page.adapter)
+            return
+        page.powerRestored = true
+
+        var want = savedPowerState()
+        if (want === "off") {
+            BluetoothState.reconnectPaused = true
+            page.adapter.enabled = false
+        } else if (want === "on") {
+            BluetoothState.reconnectPaused = false
+            page.adapter.enabled = true
+        }
+    }
+
+    onAdapterChanged: restorePower()
+    // ----------------------------------------------------------------------
 
     function setStatus(text) {
         page.statusText = text
@@ -37,6 +85,7 @@ Item {
             return
 
         if (page.adapter.enabled) {
+            savePowerState("off")
             BluetoothState.reconnectPaused = true
             setDiscovering(false)
 
@@ -51,6 +100,7 @@ Item {
             return
         }
 
+        savePowerState("on")
         BluetoothState.reconnectPaused = false
         page.adapter.enabled = true
     }
@@ -121,7 +171,10 @@ Item {
 
     onVisibleChanged: setDiscovering(page.visible && page.powered)
     onPoweredChanged: setDiscovering(page.visible && page.powered)
-    Component.onCompleted: if (page.visible && page.powered) setDiscovering(true)
+    Component.onCompleted: {
+        restorePower()
+        if (page.visible && page.powered) setDiscovering(true)
+    }
     Component.onDestruction: setDiscovering(false)
 
     Connections {
@@ -150,7 +203,7 @@ Item {
 
         Text {
             text: "BLUETOOTH"; color: Theme.text
-            font.family: Theme.fontFamily; font.pixelSize: 19; font.letterSpacing: 3
+            font.family: Theme.fontFamily; font.pixelSize: Theme.textSizeTitle; font.letterSpacing: 3
         }
 
         Rectangle { width: parent.width; height: 1; color: Theme.border }
@@ -171,7 +224,7 @@ Item {
                 text: page.powered ? "BLUETOOTH ON" : "BLUETOOTH OFF"
                 color: page.powered ? Theme.accent : Theme.textFaint
                 font.family: Theme.fontFamily
-                font.pixelSize: 10
+                font.pixelSize: Theme.textSizeSmall
                 font.bold: true
                 font.letterSpacing: 1
             }
@@ -189,7 +242,7 @@ Item {
             text: page.statusText
             color: Theme.accent
             font.family: Theme.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: Theme.textSizeSmall
             horizontalAlignment: Text.AlignHCenter
         }
 
@@ -217,7 +270,7 @@ Item {
                         text: "NO BLUETOOTH ADAPTER"
                         color: Theme.textDim
                         font.family: Theme.fontFamily
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.textSizeBody
                         font.letterSpacing: 1
                     }
                 }
@@ -244,7 +297,7 @@ Item {
                             text: "BLUETOOTH IS OFF"
                             color: Theme.textDim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.textSizeBody
                             font.letterSpacing: 1
                         }
                     }
@@ -272,7 +325,7 @@ Item {
                             text: "SCANNING FOR DEVICES..."
                             color: Theme.textDim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.textSizeBody
                             font.letterSpacing: 1
                         }
 
@@ -281,7 +334,7 @@ Item {
                             text: "Keep this open while devices appear."
                             color: Theme.textFaint
                             font.family: Theme.fontFamily
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.textSizeSmall
                         }
                     }
                 }
@@ -339,7 +392,7 @@ Item {
                                     : Theme.accent
 
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.textSizeSmall
                                 verticalAlignment: Text.AlignVCenter
 
                                 MouseArea {
@@ -362,7 +415,7 @@ Item {
                                     text: "\uf293"
                                     color: Theme.textDim
                                     font.family: Theme.iconFont
-                                    font.pixelSize: 16
+                                    font.pixelSize: Theme.textSizeSection
                                 }
 
                                 MouseArea {
@@ -390,7 +443,7 @@ Item {
                                         text: "Unpair"
                                         color: "white"
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.textSizeSmall
                                     }
                                 }
                             }
@@ -417,7 +470,7 @@ Item {
                                     ? Theme.accent
                                     : Theme.textDim
                                 font.family: Theme.iconFont
-                                font.pixelSize: 15
+                                font.pixelSize: Theme.textSizeSection
                                 verticalAlignment: Text.AlignVCenter
                             }
 
@@ -435,7 +488,7 @@ Item {
                                     elide: Text.ElideRight
                                     color: Theme.text
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.textSizeGroup
                                 }
 
                                 Text {
@@ -464,7 +517,7 @@ Item {
                                         : Theme.textFaint
 
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.textSizeSmall
                                     elide: Text.ElideRight
                                 }
                             }

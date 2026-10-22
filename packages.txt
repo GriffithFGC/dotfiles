@@ -34,6 +34,7 @@ xdg-utils
 awww
 grim
 slurp
+gpu-screen-recorder
 imagemagick
 matugen
 
@@ -71,6 +72,7 @@ wl-clipboard
 
 kitty
 zsh
+zsh-autocomplete
 zsh-autosuggestions
 zsh-syntax-highlighting
 starship
@@ -88,6 +90,7 @@ tumbler
 ffmpegthumbnailer
 xed
 ncdu
+zenity
 
 # --------------------------------------------------
 # GTK / Theming / Icons / Appearance
