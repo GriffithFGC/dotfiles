@@ -12,20 +12,25 @@ hl.bind(mainMod .. " + S", hl.dsp.exec_cmd("qs ipc call wheel toggle")) -- Wheel
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
-
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd("chromium --app=https://claude.ai"))
+hl.bind(mainMod .. " + P", hl.dsp.exec_cmd("steam steam://rungameid/1364780")) -- Street Fighter 6
+hl.bind(mainMod .. " + O", hl.dsp.exec_cmd("obsidian --ozone-platform=x11")) -- Obsidian (X11)
 hl.bind(mainMod .. " + Tab", hl.dsp.exec_cmd("hyprlock")) -- Lock screen
-
-hl.bind(mainMod .. " + GRAVE", hl.dsp.exec_cmd("qs ipc call powermenu toggle")) -- Power menu
-
+hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("discord")) -- Discord
+hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("spotify")) -- Spotify
+hl.bind(mainMod .. " + F12", hl.dsp.exec_cmd("qs ipc call powermenu toggle")) -- Power menu
+hl.bind(mainMod .. " + G", hl.dsp.exec_cmd([[sh -c 'c=$(hyprpicker -n -z -r | tr -d "#"); [ -n "$c" ] && printf %s "$c" | wl-copy && notify-send "Couleur copiée" "$c"']]))
 hl.bind(mainMod .. " + I", hl.dsp.exec_cmd("qs ipc call settings toggle")) -- Settings
+
+
 
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("qs -n -p ~/.config/quickshell/hyprquickpaper")) -- Wallpapers
 
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ mode = 0 })) -- Fullscreen
 
-hl.bind(mainMod .. " + O", hl.dsp.exec_cmd(home .. "/.config/hypr/scripts/opacity.sh")) -- Opacity
+hl.bind(mainMod .. " + Y", hl.dsp.exec_cmd(home .. "/.config/hypr/scripts/opacity.sh")) -- Opacity
 
-hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("python3 " .. home .. "/.config/43pr/bin/theme.py toggle")) -- Light/dark toggle
+hl.bind(mainMod .. " + U", hl.dsp.exec_cmd("python3 " .. home .. "/.config/43pr/bin/theme.py toggle")) -- Light/dark toggle
 
 hl.bind(mainMod .. " + N", hl.dsp.exec_cmd("qs ipc call notifications toggle")) -- Notifications
 
@@ -37,13 +42,20 @@ hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd("qs ipc call bar toggle")) -- Toggle bar
 
+hl.bind("SUPER + SHIFT + G", function()
+    local w = "class:steam_app_.*"
+    hl.dispatch(hl.dsp.window.move({ workspace = hl.get_active_workspace(), window = w }))
+    hl.dispatch(hl.dsp.focus({ window = w }))
+    hl.dispatch(hl.dsp.window.bring_to_top())
+end)
+
 -- Clipboard
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("pgrep -x rofi >/dev/null && pkill -x rofi || cliphist list | rofi -dmenu -p '' | cliphist decode | wl-copy"))
 
 -- Screenshot fullscreen
-hl.bind("Delete", hl.dsp.exec_cmd("sh -c 'file=" .. home .. "/Pictures/$(date +%s).png; grim \"$file\"; wl-copy < \"$file\"; qs ipc call screenshot notify \"$file\"'"))
+hl.bind("Print", hl.dsp.exec_cmd("sh -c 'file=" .. home .. "/Pictures/$(date +%s).png; grim \"$file\"; wl-copy < \"$file\"; qs ipc call screenshot notify \"$file\"'"), { dont_inhibit = true })
 -- Screenshot area select
-hl.bind("SHIFT + Delete", hl.dsp.exec_cmd("sh -c 'file=" .. home .. "/Pictures/$(date +%s).png; grim -g \"$(slurp)\" \"$file\"; wl-copy < \"$file\"; qs ipc call screenshot notify \"$file\"'"))
+hl.bind("SHIFT + Print", hl.dsp.exec_cmd("sh -c 'file=" .. home .. "/Pictures/$(date +%s).png; grim -g \"$(slurp)\" \"$file\"; wl-copy < \"$file\"; qs ipc call screenshot notify \"$file\"'"), { dont_inhibit = true })
 
 -- Keyboard layout
 hl.bind(mainMod .. " + X", hl.dsp.exec_cmd("hyprctl switchxkblayout current next"))

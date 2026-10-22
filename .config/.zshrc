@@ -3,10 +3,10 @@ eval "$(starship init zsh)"
 # Monochrome eza
 export EZA_COLORS="uu=bright-black:gu=bright-black:da=bright-black:ur=white:uw=bright-black:ux=white:ue=bright-black:gr=bright-black:gw=bright-black:gx=white:tr=bright-black:fi=white:di=bright-white:ln=bright-black:pi=bright-black:so=bright-black:bd=bright-black:cd=bright-black:or=bright-black:mi=bright-black:ex=white"
 
-alias ls='eza --icons'
-alias ll='eza -lah --icons --git'
-alias la='eza -a --icons'
-alias lt='eza --tree --icons'
+alias ls='eza --icons=auto'
+alias ll='eza -lah --icons=auto --git'
+alias la='eza -a --icons=auto'
+alias lt='eza --tree --icons=auto'
 
 
 # --------------------------------------------------
@@ -63,3 +63,9 @@ ZSH_HIGHLIGHT_STYLES[unknown-token]='fg=245'
 
 # 43PR theme controller
 theme() { python3 "$HOME/.config/43pr/bin/theme.py" "$@"; }
+
+export PATH=$PATH:/home/femto/.spicetify
+export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
+
+# Hermes Agent command
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac

@@ -11,18 +11,25 @@ hl.layer_rule({
 -- Opacity rules for all windows except fullscreen
 hl.window_rule({
     match = { class = ".*" },
-    opacity = "1.0 override",
+    opacity = "0.7 override",
 })
 hl.window_rule({
     match = { class = ".*", fullscreen = true },
     opacity = "1.0 override",
 })
 
---hl.window_rule({
---    name = "brave-opaque",
---    match = { class = "^brave-browser$" },
---    opacity = "1.0 override",
---})
+hl.window_rule({
+    name = "keepassxc-ws",
+    match = { class = "^(org.keepassxc.KeePassXC)$" },
+    workspace = "4 silent",
+})
+
+hl.window_rule({
+    name = "steam-ws",
+    match = { class = "^(steam)$" },
+    workspace = "4 silent",
+})
+
 
 hl.window_rule({
     match = { class = "kitty" },

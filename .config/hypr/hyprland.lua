@@ -7,12 +7,13 @@ mainMod    = "SUPER"
 terminal   = "kitty"
 menu       = "rofi -show drun"
 fileManager = "thunar"
-browser    = "brave"
+browser    = "zen-browser"
 
 ---- AUTOSTART ----
 
 hl.on("hyprland.start", function()
-    -- hl.exec_cmd("dunst") replaced with quickshell 
+    hl.exec_cmd("hyprlock")
+    hl.exec_cmd("dunst")  
     hl.exec_cmd("nm-applet")
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
@@ -21,21 +22,24 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd("~/.config/hypr/scripts/wallpaper-restore.sh")
     hl.exec_cmd("sleep 2 && QSG_RENDER_LOOP=basic qs")
+    hl.exec_cmd("keepassxc")
+    hl.exec_cmd("steam")
 end)
 
 ---- ENVIRONMENT VARIABLES ----
 
 hl.env("XCURSOR_SIZE", "14")
-hl.env("QT_QPA_PLATFORM", "wayland")
+hl.env("QT_QPA_PLATFORM", "wayland;xcb")
 hl.env("MOZ_ENABLE_WAYLAND", "1")
 
 ---- INPUT ----
 
 hl.config({
     input = {
-        kb_layout = "us,latam",
+        kb_layout = "fr",
         follow_mouse = 1,
-        sensitivity = 0.5,
+        sensitivity = -0.75,
+	accel_profile ="flat",
         touchpad = {
             natural_scroll = false,
             tap_to_click = true,

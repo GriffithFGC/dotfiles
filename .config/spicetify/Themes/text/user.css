@@ -58,7 +58,7 @@ bash: spicetify apply */
 
     --border-radius: 4px;
     --border-width: 1px;
-    --border-style: dashed; /* dotted | dashed | solid | double | groove | ridge | inset | outset */
+    --border-style: none;
     --border-transition: 0.2s ease; /* 'none' to disable  */
 
     --global-nav-margin-top: 50px; /* set to '0px' if you disabled window controls */
@@ -1033,3 +1033,31 @@ button[data-testid="control-button-npv-episodes"] svg {
 .main-connectBar-connectBar svg {
     fill: var(--spice-accent-active);
 }
+
+/* main header */
+.dqwQhIudKoD98eWJzj5E,
+.p21x4R9OyvxWhr9old3h {
+  background-color: var(--spice-main) !important;
+  background-image: none !important;
+  --background-base: var(--spice-main) !important;
+  transition: none !important;
+}
+
+/* sidebar  */
+.Root__right-sidebar,
+.Root__right-sidebar > * {
+  --background-base: var(--spice-main) !important;
+  background-color: var(--spice-main) !important;
+}
+
+/* hide labels */
+.Root__globalNav::before,
+.main-globalNav-searchContainer form div:has(> .main-topBar-searchBar:focus)::before,
+.Root__nav-bar .main-yourLibraryX-entryPoints::before,
+.Root__main-view::before,
+.main-nowPlayingBar-container::before,
+.Root__right-sidebar::before {
+  content: none !important;
+  display: none !important;
+}
+

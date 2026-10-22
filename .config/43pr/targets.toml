@@ -20,3 +20,8 @@ output = "~/.config/gtk-4.0/colors.css"
 [quickshell]
 input  = "~/.config/43pr/templates/quickshell-theme.json"
 output = "~/.cache/43pr/quickshell-theme.json"
+
+[openrgb]
+input  = "~/.config/43pr/templates/openrgb-color.txt"
+output = "~/.cache/43pr/openrgb-color"
+reload = ["setsid", "-f", "/home/femto/.local/bin/43pr-rgb-sync"]
