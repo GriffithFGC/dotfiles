@@ -179,3 +179,44 @@ body,
     border-left-width: 1px !important;
     border-left-color: var(--border-subtle) !important;
 }
+
+/* calls: discord paints the call area --black (wrapper, container, idle root), which reads as a
+   dark slab over the window; let the frame show through like the chat below it */
+.wrapper_cb9592 /* call wrapper */,
+.callContainer_cb9592 /* call container */,
+.root_bfe55a /* call root behind the participants */ {
+    background: transparent !important;
+}
+
+/* profile banners: drop the plain colour banner; custom image banners (inline url) stay */
+.banner__68edb:not([style*="url("]) {
+    background-color: transparent !important;
+}
+.banner__68edb:not([style*="url("])::before {
+    display: none;
+}
+
+/* outlines: none on buttons, inputs, cards and dividers. same element and selectors as midnight's
+   colour block, declared later, so the control/input tokens built from these resolve to transparent */
+body,
+.theme-dark:not(.custom-user-profile-theme),
+.theme-light:not(.custom-user-profile-theme) {
+    --border-light: transparent;
+    --button-border: transparent;
+    --border-subtle: transparent;
+    --border-muted: transparent;
+    --border-normal: transparent;
+    --border-strong: transparent;
+    --input-border-hover: transparent;
+    --app-frame-border: transparent;
+}
+
+/* dm profile panel (right of a conversation): no panel background, outline or overlay layer;
+   the profile sits straight on the frame like the chat. custom nitro themes keep their gradient */
+.outer_c0bea0.user-profile-sidebar:not(.custom-user-profile-theme),
+.user-profile-sidebar:not(.custom-user-profile-theme) .inner_c0bea0,
+.user-profile-sidebar:not(.custom-user-profile-theme) .overlay_c0bea0 {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
