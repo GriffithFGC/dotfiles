@@ -46,3 +46,8 @@ input  = "~/.config/43pr/templates/hypr-colors.lua"
 output = "~/.config/hypr/colors.lua"
 reload = ["hyprctl", "reload"]
 
+
+# Vesktop watches its themes folder and reloads the CSS live: no reload hook needed.
+[discord]
+input  = "~/.config/43pr/templates/discord.theme.css"
+output = "~/.config/vesktop/themes/43pr.theme.css"

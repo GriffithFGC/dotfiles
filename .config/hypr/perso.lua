@@ -9,7 +9,7 @@
 hl.bind(mainMod .. " + A", hl.dsp.exec_cmd("chromium --app=https://claude.ai"))
 hl.bind(mainMod .. " + P", hl.dsp.exec_cmd("steam steam://rungameid/1364780")) -- Street Fighter 6
 hl.bind(mainMod .. " + O", hl.dsp.exec_cmd("obsidian --ozone-platform=x11"))   -- Obsidian (X11)
-hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("discord"))
+hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("vesktop"))                        -- Discord (Vesktop, 43pr theme)
 hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("spotify"))
 
 -- Pick a color with hyprpicker, copy the hex to the clipboard
