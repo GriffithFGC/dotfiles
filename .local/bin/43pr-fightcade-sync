@@ -1,0 +1,9 @@
+#!/bin/sh
+# Make sure Fightcade's Nativefier shell loads the 43pr inject script.
+# Its inject/ folder can be replaced by a Fightcade update, so relink it on every
+# theme change; the script itself reloads ~/.cache/43pr/fightcade.css live.
+APP="$HOME/Games/Fightcade/fc2-electron/resources/app"
+SRC="$HOME/.local/share/43pr/fightcade-inject.js"
+[ -d "$APP" ] || exit 0
+mkdir -p "$APP/inject"
+[ "$(readlink "$APP/inject/inject.js")" = "$SRC" ] || ln -sfn "$SRC" "$APP/inject/inject.js"

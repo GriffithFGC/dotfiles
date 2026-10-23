@@ -107,3 +107,9 @@ output = "~/.config/qt5ct/43pr.qss"
 [chromium]
 input  = "~/.config/43pr/templates/chromium-policy.json"
 output = "~/.cache/43pr/chromium-policies/43pr.json"
+
+# Fightcade (Nativefier): the hook links fightcade-inject.js into the app, which reloads this CSS live.
+[fightcade]
+input  = "~/.config/43pr/templates/fightcade.css"
+output = "~/.cache/43pr/fightcade.css"
+reload = ["/home/femto/.local/bin/43pr-fightcade-sync"]
