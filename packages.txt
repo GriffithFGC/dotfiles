@@ -113,6 +113,7 @@ nwg-look
 
 mpv
 vesktop-bin
+millennium-bin
 
 # --------------------------------------------------
 # System Monitoring / Hardware

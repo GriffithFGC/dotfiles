@@ -281,6 +281,27 @@ if [[ -f "$SRC/.zshrc" ]]; then
     success "Linked ~/.zshrc."
 fi
 
+# .local (theme hooks in ~/.local/bin, desktop overrides) links the same way
+if [[ -d "$REPO_DIR/.local" ]]; then
+    while IFS= read -r -d '' src; do
+        rel="${src#"$REPO_DIR"/}"
+        dest="$HOME/$rel"
+        mkdir -p "$(dirname "$dest")"
+        if [[ -e "$dest" && ! -L "$dest" ]]; then
+            mkdir -p "$BACKUP_DIR/home/$(dirname "$rel")"
+            mv "$dest" "$BACKUP_DIR/home/$rel"
+            BACKED_UP_COUNT=$((BACKED_UP_COUNT + 1))
+        fi
+        ln -sfn "$src" "$dest"
+        if [[ "$(readlink -f "$dest")" == "$(readlink -f "$src")" ]]; then
+            LINKED_COUNT=$((LINKED_COUNT + 1))
+        else
+            LINK_FAILED=1
+            error "Failed to link $rel"
+        fi
+    done < <(find "$REPO_DIR/.local" \( -type f -o -type l \) -print0)
+fi
+
 # Generated files: copy once so configs that `include`/`source`/`@import`
 # them don't fail to parse before the first `theme apply` runs.
 for g in "${GENERATED_FILES[@]}"; do

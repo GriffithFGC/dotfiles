@@ -1,0 +1,303 @@
+#!/home/femto/.local/share/43pr-rgb/venv/bin/python
+"""Push the 43PR theme accent color to every OpenRGB device.
+
+Reads the hex color theme.py renders to ~/.cache/43pr/openrgb-color.
+Tweak with env vars or edit the defaults below:
+  RGB_MIN_SAT  minimum saturation (0-1) so pastel theme colors still read as color on LEDs
+  RGB_SKIP     comma-separated substrings of device names to leave alone
+  RGB_GAMMA    LEDs are linear, screens aren't: without this, mid channel values
+               light up far too bright and colors look washed out (1 = off)
+  RGB_GAMMA_DEVICES  per-device override, "name substring:gamma,..." (devices that
+               already correct in firmware, like the keyboard, want 1)
+  RGB_FAN_LEDS LEDs per Corsair fan header (ML RGB = 4); the Commander Core can't
+               detect fans, so these zones come up with 0 LEDs on every server start
+  RGB_ANIM     0 disables the animations below
+  RGB_BOOT_FADE   seconds each device takes to fade in from black at boot
+  RGB_BOOT_STAGGER  delay between devices of that boot wave
+  RGB_THEME_FADE  seconds of the cross-fade from the previous theme color
+  RGB_BOOT=1   replay the boot animation now (preview)
+"""
+import colorsys, fcntl, os, subprocess, sys, time
+from datetime import datetime
+from pathlib import Path
+
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "43pr"
+COLOR_FILE = CACHE / "openrgb-color"
+LAST_FILE = CACHE / "openrgb-last"       # theme color the LEDs currently show
+LOCK_FILE = CACHE / "rgb.lock"
+LOG = CACHE / "rgb.log"
+MIN_SAT = float(os.environ.get("RGB_MIN_SAT", "0.55"))
+GAMMA = float(os.environ.get("RGB_GAMMA", "2.2"))
+GAMMA_DEVICES = dict(
+    (k.strip().lower(), float(v)) for k, v in
+    (e.split(":") for e in os.environ.get("RGB_GAMMA_DEVICES", "pro x rapid:1,commander core:2.3").split(",") if ":" in e))
+FAN_LEDS = int(os.environ.get("RGB_FAN_LEDS", "4"))
+SKIP = [s.strip().lower() for s in os.environ.get("RGB_SKIP", "").split(",") if s.strip()]
+ANIM = os.environ.get("RGB_ANIM", "1") != "0"
+BOOT_FADE = float(os.environ.get("RGB_BOOT_FADE", "1.5"))
+BOOT_STAGGER = float(os.environ.get("RGB_BOOT_STAGGER", "0.25"))
+THEME_FADE = float(os.environ.get("RGB_THEME_FADE", "1.2"))
+FPS = 30
+BOOT_WINDOW = 300                        # server starts within this uptime count as a boot
+
+
+def log(msg):
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(f"{datetime.now():%F %T} {msg}\n")
+
+
+def theme_hsv(hexcolor):
+    """Theme color as the HSV the LEDs should show, before per-device gamma."""
+    h = hexcolor.strip().lstrip("#")[:6]
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    hue, sat, val = colorsys.rgb_to_hsv(r, g, b)
+    if sat > 0.08:                      # keep near-greys (mono themes) as they are
+        sat = max(sat, MIN_SAT)
+        val = 1.0                       # LEDs have no "dark", only dim
+    return hue, sat, val
+
+
+def to_led(hsv, gamma=GAMMA):
+    r, g, b = colorsys.hsv_to_rgb(*hsv)
+    return tuple(round(c ** gamma * 255) for c in (r, g, b))
+
+
+def led_color(hexcolor, gamma=GAMMA):
+    return to_led(theme_hsv(hexcolor), gamma)
+
+
+def gamma_for(name):
+    return next((gm for k, gm in GAMMA_DEVICES.items() if k in name.lower()), GAMMA)
+
+
+def ease(t):
+    t = min(max(t, 0.0), 1.0)
+    return t * t * (3 - 2 * t)          # smoothstep: gentle start and landing
+
+
+def mix_hsv(a, b, t):
+    """Blend around the hue wheel (shortest way) so a cross-fade never passes through grey."""
+    (h1, s1, v1), (h2, s2, v2) = a, b
+    if s1 < 0.08:                       # grey or black has no hue of its own
+        h1 = h2
+    if s2 < 0.08:
+        h2 = h1
+    dh = (h2 - h1 + 0.5) % 1.0 - 0.5
+    return ((h1 + dh * t) % 1.0, s1 + (s2 - s1) * t, v1 + (v2 - v1) * t)
+
+
+def boot_order(dev):
+    # Wave from the fans and pump outwards to the keyboard.
+    name = dev.name.lower()
+    return 0 if "commander core" in name else 2 if "pro x rapid" in name else 1
+
+
+def animate(devices, frame_hsv, duration):
+    """Stream frames to every device; frame_hsv(index, t_seconds) -> HSV."""
+    from openrgb.utils import RGBColor, OpenRGBDisconnected
+    live = list(enumerate(devices))
+    start = time.time()
+    while live:
+        now = time.time() - start
+        for i, dev in list(live):
+            try:
+                dev.set_color(RGBColor(*to_led(frame_hsv(i, now), gamma_for(dev.name))), fast=True)
+            except OpenRGBDisconnected:
+                raise
+            except Exception as e:      # drop a misbehaving device from the animation, not the run
+                log(f"{dev.name}: animation stopped: {e!r}")
+                live.remove((i, dev))
+        if now >= duration:
+            break
+        time.sleep(1 / FPS)
+
+
+def wait_for_detection(timeout=90):
+    """Block until the freshly started server logs the end of device detection.
+
+    Detection takes 7-13s with pauses of up to 7s (Logitech receiver), so guessing
+    from a stable device list is unreliable, and a client connected while devices
+    are still registering gets dropped by openrgb-python.
+    """
+    pid = os.environ.get("MAINPID")     # systemd passes the server's PID to ExecStartPost
+    started = time.time()
+    while time.time() - started < timeout:
+        # The server keeps its own log open; the previous run's log says "completed" too.
+        try:
+            logfile = next(os.readlink(f) for f in Path(f"/proc/{pid}/fd").iterdir()
+                           if "/OpenRGB/logs/" in os.readlink(f))
+            if "Detection completed" in Path(logfile).read_text(errors="replace"):
+                return
+        except (StopIteration, OSError):
+            pass
+        time.sleep(0.5)
+    log("OpenRGB detection did not finish in time; applying anyway")
+
+
+def apply_all(client, target, last, boot, hexcolor):
+    """Set up every device, play the animation and land on the theme color.
+
+    Raises OpenRGBDisconnected so main() can retry on a fresh connection.
+    Returns (applied, kind); applied is None when the server has no devices.
+    """
+    from openrgb.utils import RGBColor, OpenRGBDisconnected
+
+    if not client.devices:
+        log("OpenRGB server reports no devices (device permissions?)")
+        client.disconnect()
+        return None, None
+
+    # USB devices first: the I2C ones (RAM, GPU, motherboard) stall while the GPU is busy,
+    # e.g. during a wallpaper transition, and would hold up the Commander Core.
+    devices = sorted(client.devices, key=lambda d: "commander core" not in d.name.lower())
+    ready = []
+    for dev in devices:
+        if any(s in dev.name.lower() for s in SKIP):
+            continue
+        for attempt in range(3):        # the Commander Core sometimes times out on a busy bus
+            try:
+                names = [m.name.lower() for m in dev.modes]
+                for wanted in ("direct", "static"):
+                    if wanted in names:
+                        dev.set_mode(wanted)
+                        break
+                resized = False
+                for z in dev.zones:
+                    if z.name.startswith("Corsair Fan Header") and not z.leds and FAN_LEDS:
+                        z.resize(FAN_LEDS)
+                        resized = True
+                if resized:
+                    dev.update()
+                ready.append(dev)
+                break
+            except OpenRGBDisconnected:
+                raise
+            except Exception as e:      # one bad device must not stop the others
+                if attempt == 2:
+                    log(f"{dev.name}: failed: {e!r}")
+                time.sleep(1)
+
+    animated = [d for d in ready if any(z.leds for z in d.zones)]
+    if boot:
+        # Boot: each device fades in from black, one after the other.
+        wave = sorted(animated, key=boot_order)
+        black = (target[0], target[1], 0.0)
+        animate(wave, lambda i, t: mix_hsv(black, target, ease((t - i * BOOT_STAGGER) / BOOT_FADE)),
+                BOOT_FADE + BOOT_STAGGER * (len(wave) - 1))
+        kind = "boot fade-in"
+    elif ANIM and last and to_led(last) != to_led(target):
+        # Theme change: everything glides together from the old color to the new one.
+        animate(animated, lambda i, t: mix_hsv(last, target, ease(t / THEME_FADE)), THEME_FADE)
+        kind = "cross-fade"
+    else:
+        kind = "set"
+
+    applied = []
+    for dev in ready:
+        color = RGBColor(*to_led(target, gamma_for(dev.name)))
+        try:
+            dev.set_color(color, fast=True)
+        except OpenRGBDisconnected:
+            raise
+        except Exception as e:
+            log(f"{dev.name}: failed: {e!r}")
+            continue
+        applied.append((dev.id, dev.name, color))
+    for _, name, color in applied:
+        log(f"{name}: #{color.red:02x}{color.green:02x}{color.blue:02x} (theme {hexcolor}, {kind})")
+    return applied, kind
+
+
+def main():
+    if len(sys.argv) > 1:
+        hexcolor = sys.argv[1]          # manual test: 43pr-rgb-sync '#ff8800'
+    elif COLOR_FILE.is_file():
+        hexcolor = COLOR_FILE.read_text().strip()
+    else:
+        log(f"no {COLOR_FILE} yet; run: python3 ~/.config/43pr/bin/theme.py apply")
+        return 1
+    try:
+        target = theme_hsv(hexcolor)
+    except ValueError:
+        log(f"bad color {hexcolor!r}")
+        return 1
+
+    # Theme changes in quick succession: let each run finish its fade before the next.
+    CACHE.mkdir(parents=True, exist_ok=True)
+    lock = LOCK_FILE.open("w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
+    from openrgb import OpenRGBClient
+    from openrgb.utils import OpenRGBDisconnected
+
+    settle = bool(os.environ.get("RGB_SETTLE"))   # set by openrgb-server.service at server start
+    if settle:
+        wait_for_detection()
+
+    def connect():
+        for _ in range(20):             # server may still be starting at login
+            try:
+                return OpenRGBClient("127.0.0.1", 6742, "43pr-rgb-sync")
+            except (ConnectionRefusedError, TimeoutError, OSError):
+                time.sleep(1)
+        return None
+
+    try:
+        last = theme_hsv(LAST_FILE.read_text())
+    except (OSError, ValueError):
+        last = None
+    uptime = float(Path("/proc/uptime").read_text().split()[0])
+    boot = ANIM and (os.environ.get("RGB_BOOT") == "1" or settle and uptime < BOOT_WINDOW)
+
+    # The server can drop us mid-run (stalled I2C bus while the GPU is busy, the Logitech
+    # receiver rebuilding a woken-up device...); start over on a fresh connection.
+    for run in range(3):
+        client = connect()
+        if client is None:
+            log("OpenRGB server unreachable; falling back to the CLI")
+            hx = "%02X%02X%02X" % to_led(target)
+            res = subprocess.run(["openrgb", "--mode", "static", "--color", hx],
+                                 capture_output=True, text=True)
+            log(f"cli fallback exit {res.returncode}")
+            return res.returncode
+        try:
+            applied, kind = apply_all(client, target, last, boot, hexcolor)
+            break
+        except OpenRGBDisconnected as e:
+            log(f"connection lost ({e!r}), retrying from scratch")
+            time.sleep(2)
+    else:
+        log("giving up after 3 lost connections")
+        return 1
+    if applied is None:
+        return 1
+    LAST_FILE.write_text(hexcolor + "\n")
+
+    # The Commander Core ignores the first frame of a new color; send everything once more.
+    # A stalled server can drop us meanwhile, so reconnect once if needed.
+    time.sleep(2)
+    for dev_id, name, color in applied:
+        for attempt in range(2):
+            try:
+                client.devices[dev_id].set_color(color, fast=True)
+                break
+            except Exception as e:
+                if attempt == 1:
+                    log(f"{name}: resend failed: {e!r}")
+                    continue
+                try:
+                    client = OpenRGBClient("127.0.0.1", 6742, "43pr-rgb-sync")
+                except Exception as e2:
+                    log(f"{name}: resend failed, reconnect failed: {e2!r}")
+                    break
+    time.sleep(1)
+    try:
+        client.disconnect()
+    except Exception:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
