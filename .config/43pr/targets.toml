@@ -47,6 +47,11 @@ output = "~/.config/hypr/colors.lua"
 reload = ["hyprctl", "reload"]
 
 
+[spicetify]
+input  = "~/.config/43pr/templates/spicetify-colors.ini"
+output = "~/.cache/43pr/spicetify-colors.ini"
+reload = ["/home/femto/.local/bin/43pr-spicetify-sync"]
+
 # Vesktop watches its themes folder and reloads the CSS live: no reload hook needed.
 [discord]
 input  = "~/.config/43pr/templates/discord.theme.css"
