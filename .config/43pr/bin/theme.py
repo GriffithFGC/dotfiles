@@ -274,6 +274,10 @@ def render(text, pal, where):
                 v = f"{r}, {g}, {b}, {arg}"
             elif fname == "hex8" and arg:
                 v = v.lstrip("#")[:6] + arg.lower()
+            elif fname == "hue":                    # hue in degrees, minus an optional offset
+                h = v.lstrip("#")[:6]
+                hue, _, _ = colorsys.rgb_to_hls(*(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)))
+                v = str(round(hue * 360 - float(arg or 0)) % 360)
             else:
                 raise ValueError(f"{where}: bad filter '{f}'")
         return v

@@ -56,3 +56,8 @@ reload = ["/home/femto/.local/bin/43pr-spicetify-sync"]
 [discord]
 input  = "~/.config/43pr/templates/discord.theme.css"
 output = "~/.config/vesktop/themes/43pr.theme.css"
+
+# Material-Theme (Millennium) with Color = Matugen re-reads this file every 1.5s: no reload hook needed.
+[steam]
+input  = "~/.config/43pr/templates/steam-material.css"
+output = "~/.local/share/Steam/millennium/themes/Material-Theme/css/main/colors/matugen.css"
