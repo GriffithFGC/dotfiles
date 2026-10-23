@@ -6,3 +6,5 @@
 .config/btop/themes/43pr.theme
 .config/cava/themes/43pr
 .config/quickshell/state/
+.config/qt5ct/43pr-colors.conf
+.config/qt5ct/43pr.qss

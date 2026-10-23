@@ -91,3 +91,13 @@ reload = ["/home/femto/.local/bin/43pr-obsidian-sync"]
 [obs]
 input  = "~/.config/43pr/templates/obs-43pr.ovt"
 output = "~/.config/obs-studio/themes/43PR.ovt"
+
+# Qt palette and stylesheet for the apps run with QT_QPA_PLATFORMTHEME=qt5ct (KeePassXC).
+# qt5ct watches its config dir and reapplies them live a few seconds after they change.
+[qt5ct-colors]
+input  = "~/.config/43pr/templates/qt5ct-colors.conf"
+output = "~/.config/qt5ct/43pr-colors.conf"
+
+[qt5ct-qss]
+input  = "~/.config/43pr/templates/qt5ct.qss"
+output = "~/.config/qt5ct/43pr.qss"
