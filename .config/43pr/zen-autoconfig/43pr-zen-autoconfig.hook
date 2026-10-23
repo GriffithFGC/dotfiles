@@ -1,0 +1,11 @@
+# Zen updates replace /opt/zen-browser-bin: put the 43PR live-theme autoconfig back.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = zen-browser-bin
+
+[Action]
+Description = Restoring 43PR live theme autoconfig for Zen...
+When = PostTransaction
+Exec = /bin/sh -c 'install -Dm644 /usr/local/share/43pr/zen/autoconfig.js /opt/zen-browser-bin/defaults/pref/autoconfig.js && install -Dm644 /usr/local/share/43pr/zen/43pr.cfg /opt/zen-browser-bin/43pr.cfg'

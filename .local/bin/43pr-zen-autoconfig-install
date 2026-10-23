@@ -1,0 +1,14 @@
+#!/bin/sh
+# Install the 43PR live-theme autoconfig into Zen (run with sudo).
+# Files come from ~/.config/43pr/zen-autoconfig; a copy is kept in
+# /usr/local/share/43pr/zen for the pacman hook that restores them after Zen updates.
+set -eu
+[ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 1; }
+user_home=$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)
+src="$user_home/.config/43pr/zen-autoconfig"
+install -Dm644 "$src/autoconfig.js" /usr/local/share/43pr/zen/autoconfig.js
+install -Dm644 "$src/43pr.cfg" /usr/local/share/43pr/zen/43pr.cfg
+install -Dm644 "$src/43pr-zen-autoconfig.hook" /etc/pacman.d/hooks/43pr-zen-autoconfig.hook
+install -Dm644 "$src/autoconfig.js" /opt/zen-browser-bin/defaults/pref/autoconfig.js
+install -Dm644 "$src/43pr.cfg" /opt/zen-browser-bin/43pr.cfg
+echo "43PR live theme installed; restart Zen once to load it."
