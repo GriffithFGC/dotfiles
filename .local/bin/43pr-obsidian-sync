@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Copy the 43PR Obsidian snippet into every vault Obsidian knows about.
+
+theme.py renders ~/.cache/43pr/obsidian.css; this writes it to
+<vault>/.obsidian/snippets/43pr.css for each vault listed in obsidian.json.
+Obsidian watches the snippets folder, so an open vault recolors live.
+The snippet is enabled in appearance.json only the first time it is installed,
+so turning it off in Obsidian's settings sticks.
+"""
+import json, sys
+from pathlib import Path
+
+HOME = Path.home()
+SNIPPET = HOME / ".cache/43pr/obsidian.css"
+VAULTS = HOME / ".config/obsidian/obsidian.json"
+NAME = "43pr"
+
+
+def enable(appearance):
+    try:
+        conf = json.loads(appearance.read_text()) if appearance.exists() else {}
+    except ValueError:
+        return                                   # leave a file we can't parse alone
+    snippets = conf.setdefault("enabledCssSnippets", [])
+    if NAME in snippets:
+        return
+    snippets.append(NAME)
+    tmp = appearance.with_name(f".{appearance.name}.43pr-tmp")
+    tmp.write_text(json.dumps(conf, indent=2) + "\n")
+    tmp.replace(appearance)
+
+
+def main():
+    css = SNIPPET.read_text()
+    vaults = json.loads(VAULTS.read_text()).get("vaults", {})
+    for v in vaults.values():
+        conf_dir = Path(v["path"]) / ".obsidian"
+        if not conf_dir.is_dir():
+            continue
+        dst = conf_dir / "snippets" / f"{NAME}.css"
+        first = not dst.exists()
+        dst.parent.mkdir(exist_ok=True)
+        tmp = dst.with_name(f".{dst.name}.43pr-tmp")
+        tmp.write_text(css)
+        tmp.replace(dst)
+        if first:
+            enable(conf_dir / "appearance.json")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except FileNotFoundError as e:
+        sys.exit(f"43pr-obsidian-sync: {e}")

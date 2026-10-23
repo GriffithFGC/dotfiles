@@ -73,3 +73,9 @@ reload = ["/home/femto/.local/bin/43pr-zen-sync"]
 input  = "~/.config/43pr/templates/zen-userContent.css"
 output = "~/.cache/43pr/zen-userContent.css"
 reload = ["/home/femto/.local/bin/43pr-zen-sync"]
+
+# Obsidian watches <vault>/.obsidian/snippets: the hook copies the snippet into every vault and it reloads live.
+[obsidian]
+input  = "~/.config/43pr/templates/obsidian.css"
+output = "~/.cache/43pr/obsidian.css"
+reload = ["/home/femto/.local/bin/43pr-obsidian-sync"]
