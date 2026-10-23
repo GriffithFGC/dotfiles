@@ -95,7 +95,7 @@
 /* Content box and popups: no outline or drop shadow either */
 #tabbrowser-tabbox #tabbrowser-tabpanels .browserSidebarContainer,
 #urlbar,
-#urlbar-background,
+#urlbar .urlbar-background,
 .urlbarView,
 menupopup,
 panel {
@@ -103,6 +103,24 @@ panel {
   border-color: transparent !important;
   box-shadow: none !important;
   outline: none !important;
+}
+
+/* Compact-mode sidebar: Zen outlines its floating panel in 15% white */
+.zen-toolbar-background,
+.zen-toolbar-background::before,
+.zen-toolbar-background::after,
+#sidebar-box {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Line between the search field and its results */
+.urlbar {
+  --urlbarview-separator-color: transparent !important;
+}
+.urlbarView-body-outer,
+.urlbarView-body-inner {
+  border: none !important;
 }
 
 ::selection {
