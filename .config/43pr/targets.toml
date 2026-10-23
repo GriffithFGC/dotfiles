@@ -101,3 +101,9 @@ output = "~/.config/qt5ct/43pr-colors.conf"
 [qt5ct-qss]
 input  = "~/.config/43pr/templates/qt5ct.qss"
 output = "~/.config/qt5ct/43pr.qss"
+
+# Chromium's managed policy dir (/etc/chromium/policies/managed) is a symlink to this folder;
+# Chromium watches it and rebuilds its Material palette from the accent live.
+[chromium]
+input  = "~/.config/43pr/templates/chromium-policy.json"
+output = "~/.cache/43pr/chromium-policies/43pr.json"
