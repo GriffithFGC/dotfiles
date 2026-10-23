@@ -20,6 +20,8 @@ QTextEdit {
     background-color: {{bg_card}};
     border: 1px solid {{bg_card}};
     border-radius: 6px;
+    selection-background-color: {{selection_bg}};
+    selection-color: {{selection_fg}};
 }
 
 QLineEdit:focus,
@@ -83,4 +85,33 @@ QToolTip {
     background-color: {{bg_card}};
     color: {{fg}};
     border: none;
+}
+
+/* Unlock screen: KeePassXC frames the form with a groove border on palette(light);
+   drop the frame so the form sits on the window background like everything else
+   (more specific than its own selector) */
+DatabaseOpenWidget QStackedWidget#centralStack,
+DatabaseOpenWidget QLabel#publicSummaryLabel {
+    background: transparent;
+    border: none;
+}
+
+DatabaseOpenWidget QLineEdit {
+    padding: 6px 8px;
+}
+
+DatabaseOpenWidget QLabel#labelHeadline {
+    color: {{accent}};
+}
+
+/* Column headers of the entry list: same background as the window, no bevel */
+QHeaderView,
+QHeaderView::section {
+    background-color: {{bg}};
+    color: {{fg_dim}};
+    border: none;
+}
+
+QHeaderView::section:hover {
+    background-color: {{bg_hover}};
 }
