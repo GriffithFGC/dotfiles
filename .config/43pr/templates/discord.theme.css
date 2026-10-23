@@ -91,17 +91,17 @@ body {
     --accent-3: var(--hl-3);
     --accent-4: var(--hl-4);
     --accent-5: var(--hl-5);
-    --accent-new: var(--red-2);
+    --accent-new: var(--accent-2); /* badges, "new" divider, mute/deafen: follow the accent, not danger */
     --mention: linear-gradient(to right, color-mix(in hsl, var(--accent-2), transparent 90%) 40%, transparent);
     --mention-hover: linear-gradient(to right, color-mix(in hsl, var(--accent-2), transparent 95%) 40%, transparent);
     --reply: linear-gradient(to right, color-mix(in hsl, var(--text-3), transparent 90%) 40%, transparent);
     --reply-hover: linear-gradient(to right, color-mix(in hsl, var(--text-3), transparent 95%) 40%, transparent);
 
-    /* status */
-    --online: var(--green-2);
-    --dnd: var(--red-2);
-    --idle: var(--yellow-2);
-    --streaming: var(--purple-2);
+    /* status: accent family; the icon shapes (dot, moon, bar) tell them apart */
+    --online: var(--accent-2);
+    --dnd: var(--hl-1);
+    --idle: var(--hl-5);
+    --streaming: var(--hl-1);
     --offline: var(--text-5);
 
     /* borders */
@@ -157,4 +157,25 @@ body,
 }
 .bg__960e4 /* main background */ {
     background: var(--bg-4);
+}
+
+/* red notification bits midnight misses: discord paints them with --status-danger.
+   partial class matches so they survive discord's hash renames */
+[class*="numberBadge_"],
+[class*="redGlow_"] /* mute/deafen when active */,
+[class*="isUnread_"] /* "new" divider, its pill and arrow */ {
+    --status-danger: var(--accent-new);
+}
+[class*="isUnread_"] {
+    border-color: var(--accent-new) !important;
+}
+[class*="unreadPill_"] {
+    background-color: var(--accent-new) !important;
+    color: var(--text-0) !important;
+}
+
+/* embeds (youtube, twitter, spotify...): drop the platform colour bar, same subtle edge all around */
+[class*="embedFull_"] {
+    border-left-width: 1px !important;
+    border-left-color: var(--border-subtle) !important;
 }

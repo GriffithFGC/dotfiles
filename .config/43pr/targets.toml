@@ -29,7 +29,8 @@ output = "~/.cache/43pr/quickshell-theme.json"
 [openrgb]
 input  = "~/.config/43pr/templates/openrgb-color.txt"
 output = "~/.cache/43pr/openrgb-color"
-reload = ["setsid", "-f", "/home/femto/.local/bin/43pr-rgb-sync"]
+# Redirect so theme.py (which captures output) doesn't wait out the LED fade.
+reload = ["sh", "-c", "setsid -f /home/femto/.local/bin/43pr-rgb-sync >/dev/null 2>&1 </dev/null"]
 
 [btop]
 input  = "~/.config/43pr/templates/btop.theme"
