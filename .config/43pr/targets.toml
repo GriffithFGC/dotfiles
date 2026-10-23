@@ -74,6 +74,12 @@ input  = "~/.config/43pr/templates/zen-userContent.css"
 output = "~/.cache/43pr/zen-userContent.css"
 reload = ["/home/femto/.local/bin/43pr-zen-sync"]
 
+# Folder icons: Papirus-43pr (inherits Papirus-Dark) rebuilt with the palette; GTK apps pick it up live.
+[icons]
+input  = "~/.config/43pr/templates/icons-colors.txt"
+output = "~/.cache/43pr/icons-colors"
+reload = ["/home/femto/.local/bin/43pr-icons-sync"]
+
 # Obsidian watches <vault>/.obsidian/snippets: the hook copies the snippet into every vault and it reloads live.
 [obsidian]
 input  = "~/.config/43pr/templates/obsidian.css"

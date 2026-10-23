@@ -1,0 +1,2 @@
+body={{accent}}
+symbol={{cursor_text}}
