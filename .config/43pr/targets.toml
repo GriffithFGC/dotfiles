@@ -62,3 +62,14 @@ output = "~/.config/vesktop/themes/43pr.theme.css"
 [steam]
 input  = "~/.config/43pr/templates/steam-material.css"
 output = "~/.local/share/Steam/millennium/themes/Material-Theme/css/main/colors/matugen.css"
+
+# Zen reads userChrome/userContent only at startup; the hook copies them into the default profile.
+[zen-chrome]
+input  = "~/.config/43pr/templates/zen-userChrome.css"
+output = "~/.cache/43pr/zen-userChrome.css"
+reload = ["/home/femto/.local/bin/43pr-zen-sync"]
+
+[zen-content]
+input  = "~/.config/43pr/templates/zen-userContent.css"
+output = "~/.cache/43pr/zen-userContent.css"
+reload = ["/home/femto/.local/bin/43pr-zen-sync"]

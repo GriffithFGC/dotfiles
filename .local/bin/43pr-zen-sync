@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Copy the 43PR-rendered userChrome/userContent CSS into Zen's default profile.
+
+theme.py renders them to ~/.cache/43pr/zen-user{Chrome,Content}.css; this finds the
+profile Zen starts with (installs.ini, else the Default=1 profile in profiles.ini),
+writes them to <profile>/chrome/ and makes sure user.js enables userChrome.css
+(Zen ships it disabled). Zen only reads these at startup.
+"""
+import configparser, os
+from pathlib import Path
+
+HOME = Path.home()
+CACHE = HOME / ".cache/43pr"
+ZEN = HOME / ".config/zen"
+PREF = 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);'
+
+
+def default_profile():
+    for name, key in (("installs.ini", "Default"), ("profiles.ini", "Path")):
+        ini = configparser.ConfigParser(interpolation=None)
+        ini.optionxform = str
+        if not ini.read(ZEN / name):
+            continue
+        for sec in ini.sections():
+            s = ini[sec]
+            if name == "installs.ini" or sec.startswith("Install"):
+                if s.get("Default"):
+                    return ZEN / s["Default"]
+            elif s.get("Default") == "1" and s.get(key):
+                return ZEN / s[key] if s.get("IsRelative", "1") == "1" else Path(s[key])
+    return None
+
+
+def atomic_write(path, text):
+    tmp = path.with_name(f".{path.name}.43pr-tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def main():
+    prof = default_profile()
+    if not prof or not prof.is_dir():
+        raise SystemExit("43pr-zen-sync: no Zen profile found")
+    chrome = prof / "chrome"
+    chrome.mkdir(exist_ok=True)
+    for name in ("userChrome.css", "userContent.css"):
+        atomic_write(chrome / name, (CACHE / f"zen-{name}").read_text())
+    user_js = prof / "user.js"
+    text = user_js.read_text() if user_js.exists() else ""
+    if PREF not in text:
+        atomic_write(user_js, text + ("" if text.endswith("\n") or not text else "\n") + PREF + "\n")
+
+
+if __name__ == "__main__":
+    main()
