@@ -41,6 +41,9 @@ hl.unbind(mainMod .. " + " .. ime_key)
 hl.bind(mainMod .. " + " .. ime_key,           hl.dsp.exec_cmd(ime_script .. " toggle"))
 hl.bind(mainMod .. " + SHIFT + " .. ime_key,   hl.dsp.exec_cmd(ime_script .. " kana"))
 
+-- Translate the highlighted text (ja -> en) in a themed bubble at the cursor
+hl.bind(mainMod .. " + SHIFT + T", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.config/hypr/scripts/perso-translate.sh ja:en"))
+
 ---- RULES ----
 
 hl.window_rule({
