@@ -23,6 +23,24 @@ hl.bind(mainMod .. " + SHIFT + G", function()
     hl.dispatch(hl.dsp.window.bring_to_top())
 end)
 
+---- KEYBOARD LAYOUT (AZERTY <-> Japonais) ----
+-- Japanese goes through fcitx5 + Mozc with the fr layout (romaji typed on
+-- AZERTY -> kana). Upstream's layout key (SUPER + X, cycles xkb layouts) is
+-- rebound here to toggle the IME instead; SHIFT adds hiragana <-> katakana.
+
+hl.env("XMODIFIERS", "@im=fcitx")   -- XWayland apps
+hl.env("QT_IM_MODULE", "fcitx")     -- Qt apps (KeePassXC, ...)
+
+hl.on("hyprland.start", function()
+    hl.exec_cmd("fcitx5 -d --replace")
+end)
+
+local ime_key    = kb_layout or "X"
+local ime_script = os.getenv("HOME") .. "/.config/hypr/scripts/perso-ime.sh"
+hl.unbind(mainMod .. " + " .. ime_key)
+hl.bind(mainMod .. " + " .. ime_key,           hl.dsp.exec_cmd(ime_script .. " toggle"))
+hl.bind(mainMod .. " + SHIFT + " .. ime_key,   hl.dsp.exec_cmd(ime_script .. " kana"))
+
 ---- RULES ----
 
 hl.window_rule({
