@@ -16,7 +16,17 @@ read -r MON MX MY < <(hyprctl monitors -j | jq -r --argjson x "$CX" --argjson y 
                and $x < .x + (.width / .scale) and $y < .y + (.height / .scale)))
     | first // empty | "\(.name) \(.x) \(.y)"')
 
-TR_TEXT="$(wl-paste --primary --no-newline 2>/dev/null | head -c 2000)" \
+# Hyprland does not bridge PRIMARY between XWayland and Wayland, so XWayland
+# windows (Obsidian on x11, Steam...) are read with xclip, the rest with wl-paste.
+wl_primary() { wl-paste --primary --no-newline 2>/dev/null; }
+x_primary()  { xclip -o -selection primary 2>/dev/null; }
+if [ "$(hyprctl activewindow -j | jq -r '.xwayland // false')" = "true" ]; then
+    TEXT="$(x_primary)"; [ -n "$TEXT" ] || TEXT="$(wl_primary)"
+else
+    TEXT="$(wl_primary)"; [ -n "$TEXT" ] || TEXT="$(x_primary)"
+fi
+
+TR_TEXT="$(printf %s "$TEXT" | head -c 2000)" \
 TR_LANGS="${1:-ja:en}" \
 TR_MON="$MON" \
 TR_X="$((CX - ${MX:-0}))" \

@@ -101,7 +101,7 @@ ShellRoot {
 
                 Text {
                     width: parent.width
-                    text: root.langs.replace(":", " → ") + (root.copied ? "  ·  copié" : "")
+                    text: root.langs.replace(":", " → ") + (root.copied ? "  ·  copied" : "")
                     font.family: Theme.fontFamily
                     font.pixelSize: 9
                     color: Theme.textFaint
@@ -120,8 +120,8 @@ ShellRoot {
                     width: Math.min(implicitWidth, 392)
                     text: root.phase === "done" ? root.result
                         : root.phase === "loading" ? "…"
-                        : root.phase === "empty" ? "Aucun texte sélectionné"
-                        : "Traduction impossible"
+                        : root.phase === "empty" ? "No text selected"
+                        : "Translation failed"
                     wrapMode: Text.Wrap
                     font.family: Theme.fontFamily
                     font.pixelSize: 13
