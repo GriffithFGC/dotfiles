@@ -1,7 +1,8 @@
 // Personal (fork GriffithFGC): translation bubble next to the cursor.
 // Started by ~/.config/hypr/scripts/perso-translate.sh with the selected text
-// and cursor position in TR_* env vars; translates with translate-shell, then
-// exits on its own. Left click copies the translation, right click closes.
+// and cursor position in TR_* env vars; perso-translate.py picks the direction
+// (Japanese -> English, anything else -> Japanese) and adds the romaji reading.
+// Exits on its own. Left click copies the translation, right click closes.
 // Theme.qml is a symlink to ../Theme.qml (made by the script) so the bubble
 // follows the 43PR palette like the notification popups.
 import QtQuick
@@ -13,12 +14,14 @@ ShellRoot {
     id: root
 
     readonly property string sourceText: Quickshell.env("TR_TEXT") || ""
-    readonly property string langs: Quickshell.env("TR_LANGS") || "ja:en"
     readonly property real cursorX: Number(Quickshell.env("TR_X") || 0)
     readonly property real cursorY: Number(Quickshell.env("TR_Y") || 0)
     readonly property string monitorName: Quickshell.env("TR_MON") || ""
 
     property string result: ""
+    property string reading: ""        // romaji of the Japanese side
+    property string src: ""
+    property string dst: ""
     property string phase: sourceText ? "loading" : "empty"   // loading | done | error | empty
     property bool showing: false
     property bool copied: false
@@ -29,11 +32,18 @@ ShellRoot {
 
     Process {
         running: root.sourceText !== ""
-        command: ["sh", "-c", 'printf %s "$TR_TEXT" | trans -b -no-ansi -no-auto "$TR_LANGS"']
+        command: ["python3", "-I", Quickshell.env("HOME") + "/.config/hypr/scripts/perso-translate.py"]
         stdout: StdioCollector {
             onStreamFinished: {
-                root.result = text.trim()
-                root.phase = root.result ? "done" : "error"
+                try {
+                    var r = JSON.parse(text)
+                    if (r.error) throw r.error
+                    root.src = r.src; root.dst = r.dst
+                    root.result = r.text; root.reading = r.reading
+                    root.phase = "done"
+                } catch (e) {
+                    root.phase = "error"
+                }
             }
         }
     }
@@ -54,6 +64,16 @@ ShellRoot {
         id: quitTimer
         interval: 200
         onTriggered: Qt.quit()
+    }
+
+    component Reading: Text {
+        width: Math.min(implicitWidth, 392)
+        text: root.reading
+        wrapMode: Text.Wrap
+        font.family: Theme.fontFamily
+        font.pixelSize: 10
+        font.italic: true
+        color: Theme.textFaint
     }
 
     PanelWindow {
@@ -101,7 +121,8 @@ ShellRoot {
 
                 Text {
                     width: parent.width
-                    text: root.langs.replace(":", " → ") + (root.copied ? "  ·  copied" : "")
+                    text: (root.phase === "done" ? root.src + " → " + root.dst : "translate")
+                          + (root.copied ? "  ·  copied" : "")
                     font.family: Theme.fontFamily
                     font.pixelSize: 9
                     color: Theme.textFaint
@@ -116,6 +137,7 @@ ShellRoot {
                     font.pixelSize: 11
                     color: Theme.textDim
                 }
+                Reading { visible: root.dst === "en" && root.reading !== "" }
                 Text {
                     width: Math.min(implicitWidth, 392)
                     text: root.phase === "done" ? root.result
@@ -128,6 +150,7 @@ ShellRoot {
                     font.bold: root.phase === "done"
                     color: root.phase === "error" ? Theme.danger : Theme.text
                 }
+                Reading { visible: root.dst === "ja" && root.reading !== "" }
             }
 
             MouseArea {

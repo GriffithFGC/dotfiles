@@ -113,3 +113,18 @@ output = "~/.cache/43pr/chromium-policies/43pr.json"
 input  = "~/.config/43pr/templates/fightcade.css"
 output = "~/.cache/43pr/fightcade.css"
 reload = ["/home/femto/.local/bin/43pr-fightcade-sync"]
+
+# fcitx5 candidate window (Japanese input, fork only): theme "43pr" selected in
+# ~/.config/fcitx5/conf/classicui.conf. classicui re-reads the theme on reload.
+[fcitx5]
+input  = "~/.config/43pr/templates/fcitx5-theme.conf"
+output = "~/.local/share/fcitx5/themes/43pr/theme.conf"
+reload = ["sh", "-c", "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadAddonConfig s classicui >/dev/null 2>&1 || true"]
+
+[fcitx5-panel]
+input  = "~/.config/43pr/templates/fcitx5-panel.svg"
+output = "~/.local/share/fcitx5/themes/43pr/panel.svg"
+
+[fcitx5-highlight]
+input  = "~/.config/43pr/templates/fcitx5-highlight.svg"
+output = "~/.local/share/fcitx5/themes/43pr/highlight.svg"
